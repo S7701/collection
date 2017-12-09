@@ -199,7 +199,7 @@ void Goal::solve(Program *p, int level, TermVarMapping *map)
     Trail *t = Trail::Note();
     Clause *c = q->clause->copy();
     Trail::Undo(t);
-    indent(level); cout << "  try:"; c->print(); cout << "\n";
+    indent(level); cout << "  try: "; c->print(); cout << "\n";
     if (term->unify(c->head)) {
       Goal *gdash = c->body == NULL ? next : c->body->append(next);
       if (gdash == NULL)
@@ -217,30 +217,30 @@ void Goal::solve(Program *p, int level, TermVarMapping *map)
 
 /* A sample test program: append */
 
-Atom *at_app = new Atom("app");
-Atom *at_cons = new Atom("cons");
+Atom *at_append = new Atom("append");
+Atom *at_pair = new Atom("pair");
 CompoundTerm *f_nil = new CompoundTerm(new Atom("nil"));
 CompoundTerm *f_1 = new CompoundTerm(new Atom("1"));
 CompoundTerm *f_2 = new CompoundTerm(new Atom("2"));
 CompoundTerm *f_3 = new CompoundTerm(new Atom("3"));
 
-// app(nil, X, X).
+// append(nil, X, X).
 Term *v_x = new Variable();
-CompoundTerm *lhs1 = new CompoundTerm(at_app, f_nil, v_x, v_x);
+CompoundTerm *lhs1 = new CompoundTerm(at_append, f_nil, v_x, v_x);
 Clause *c1 = new Clause(lhs1, NULL);
 
-// app(cons(X, L), M, cons(X, N) :- app(L, M, N).
+// append(pair(X, L), M, pair(X, N) :- append(L, M, N).
 Term *v_l = new Variable();
 Term *v_m = new Variable();
 Term *v_n = new Variable();
-CompoundTerm *rhs2 = new CompoundTerm(at_app, v_l, v_m, v_n);
-CompoundTerm *lhs2 = new CompoundTerm(at_app, new CompoundTerm(at_cons, v_x, v_l), v_m, new CompoundTerm(at_cons, v_x, v_n));
+CompoundTerm *rhs2 = new CompoundTerm(at_append, v_l, v_m, v_n);
+CompoundTerm *lhs2 = new CompoundTerm(at_append, new CompoundTerm(at_pair, v_x, v_l), v_m, new CompoundTerm(at_pair, v_x, v_n));
 Clause *c2 = new Clause(lhs2, new Goal(rhs2,NULL));
 
-// app(I, J, cons(1, cons(2, cons(3, nil)))).
+// append(I, J, pair(1, pair(2, pair(3, nil)))).
 Variable *v_i = new Variable();
 Variable *v_j = new Variable();
-CompoundTerm *rhs3 = new CompoundTerm(at_app, v_i, v_j,  new CompoundTerm(at_cons, f_1, new CompoundTerm(at_cons, f_2, new CompoundTerm(at_cons, f_3, f_nil))));
+CompoundTerm *rhs3 = new CompoundTerm(at_append, v_i, v_j,  new CompoundTerm(at_pair, f_1, new CompoundTerm(at_pair, f_2, new CompoundTerm(at_pair, f_3, f_nil))));
 
 Goal *g1 = new Goal(rhs3, NULL);
 
