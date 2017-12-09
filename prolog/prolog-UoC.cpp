@@ -1,6 +1,6 @@
-/* prolog.cpp: a simple Prolog interpreter written in C++,              */
-/*             including an example test run as main().                 */
-/* Copyright (c) Alan Mycroft, University of Cambridge, 2000.           */
+// prolog.cpp: a simple Prolog interpreter written in C++,
+//             including an example test run as main().
+// Copyright (c) Alan Mycroft, University of Cambridge, 2000.
 
 #include <iostream>
 using namespace std;
@@ -93,21 +93,21 @@ class TermVarMapping;
 
 class Goal {
 private:
-  CompoundTerm *car;
-  Goal *cdr;
+  CompoundTerm *term;
+  Goal *next;
 public:
-  Goal(CompoundTerm *h, Goal *t) : car(h), cdr(t) {}
+  Goal(CompoundTerm *h, Goal *t) : term(h), next(t) {}
   Goal *copy() {
-    return new Goal(car->copy2(), cdr == NULL ? NULL : cdr->copy());
+    return new Goal(term->copy2(), next == NULL ? NULL : next->copy());
   }
   Goal *append(Goal *l) {
-    return new Goal(car, cdr == NULL ? NULL : cdr->append(l));
+    return new Goal(term, next == NULL ? NULL : next->append(l));
   }
   void print() {
-    car->print();
-    if (cdr != NULL) {
+    term->print();
+    if (next != NULL) {
       cout << "; ";
-      cdr->print();
+      next->print();
     }
   }
   void solve(Program *p, int level, TermVarMapping *map);
@@ -133,23 +133,23 @@ public:
 
 class Program {
 public:
-  Clause *pcar;
-  Program *pcdr;
-  Program(Clause *h, Program *t) : pcar(h), pcdr(t) {}
+  Clause *clause;
+  Program *next;
+  Program(Clause *h, Program *t) : clause(h), next(t) {}
 };
 
 class Trail {
 private:
- Variable *tcar;
- Trail *tcdr;
+ Variable *var;
+ Trail *next;
  static Trail *sofar;
- Trail(Variable *h, Trail *t) : tcar(h), tcdr(t) {}
+ Trail(Variable *h, Trail *t) : var(h), next(t) {}
 public:
   static Trail *Note() { return sofar; }
   static void Push(Variable *x) { sofar = new Trail(x, sofar); }
   static void Undo(Trail *whereto) {
-    for (; sofar != whereto; sofar = sofar->tcdr)
-      sofar->tcar->reset();
+    for (; sofar != whereto; sofar = sofar->next)
+      sofar->var->reset();
   }
 };
 Trail *Trail::sofar = NULL;
@@ -195,13 +195,13 @@ void Goal::solve(Program *p, int level, TermVarMapping *map)
   cout << "solve@"  << level << ": ";
   this->print();
   cout << "\n";
-  for (Program *q = p; q != NULL; q = q->pcdr) { 
+  for (Program *q = p; q != NULL; q = q->next) { 
     Trail *t = Trail::Note();
-    Clause *c = q->pcar->copy();
+    Clause *c = q->clause->copy();
     Trail::Undo(t);
     indent(level); cout << "  try:"; c->print(); cout << "\n";
-    if (car->unify(c->head)) {
-      Goal *gdash = c->body == NULL ? cdr : c->body->append(cdr);
+    if (term->unify(c->head)) {
+      Goal *gdash = c->body == NULL ? next : c->body->append(next);
       if (gdash == NULL)
         map->showanswer();
       else
