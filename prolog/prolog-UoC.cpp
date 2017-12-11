@@ -3,8 +3,8 @@
 // Copyright (c) Alan Mycroft, University of Cambridge, 2000.
 
 #include <iostream>
+#include <cstring.h>
 using namespace std;
-#include <string.h>
 
 void indent(int n) {
   for (int i = 0; i < n; ++i) cout << "    ";
@@ -13,10 +13,11 @@ void indent(int n) {
 class Atom {
 private:
   const char *name;
+	int len;
 public:
-  Atom(const char *n) : name(n) {}
+  Atom(const char *n) : name(n), len(strlen(s)) {}
   void print() { cout << name; }
-  bool eq(Atom *t) { return strcmp(name, t->name) == 0; }
+  bool eq(Atom *other) { return ((len == other->len) && (strcmp(name, other->name) == 0)); }
 };
 
 class CompoundTerm;
@@ -54,15 +55,15 @@ public:
   Term *copy() { return copy2(); }
   CompoundTerm *copy2() { return new CompoundTerm(this); }
 private:
-  CompoundTerm(CompoundTerm *p)
-  : fsym(p->fsym), arity(p->arity), args(p->arity == 0 ? NULL : new Term*[p->arity]) {
-    for (int i = 0; i < arity; ++i) args[i] = p->args[i]->copy();
+  CompoundTerm(CompoundTerm *other)
+  : fsym(other->fsym), arity(other->arity), args(other->arity == 0 ? NULL : new Term*[other->arity]) {
+    for (int i = 0; i < arity; ++i) args[i] = other->args[i]->copy();
   }
-  bool unify2(CompoundTerm *t) { 
-    if (!(fsym->eq(t->fsym) && arity == t->arity))
+  bool unify2(CompoundTerm *other) { 
+    if (!(fsym->eq(other->fsym) && arity == other->arity))
       return false;
-    for (int i = 0; i<arity; i++)
-      if (!args[i]->unify(t->args[i])) return false;
+    for (int i = 0; i < arity; i++)
+      if (!args[i]->unify(other->args[i])) return false;
     return true;
   }
 };
@@ -70,19 +71,22 @@ private:
 class Variable : public Term {
 private:
   Term *instance;
+  const char *varname;
   int varno;
   static int varcount;
 public:
-  Variable() : instance(this), varno(++varcount) {}
+  Variable(const char *n = NULL) : instance(NULL), varname(n), varno(++varcount) {}
   void print() {
-    if (instance != this)
+    if (instance != NULL)
       instance->print();
+    else if (varname != NULL)
+      cout << "@" << varname;
     else
-      cout << "_" << varno;
+      cout << "#" << varno;
   };
   bool unify(Term *t);
   Term *copy();
-  void reset() { instance = this; }
+  void reset() { instance = NULL; }
 private:
   bool unify2(CompoundTerm *t) { return this->unify(t); }
 };
@@ -107,19 +111,19 @@ public:
     term->print();
     if (next != NULL) {
       cout << "; ";
-      next->print();
+      next->print(); // recursive print rest of goal
     }
   }
-  void solve(Program *p, int level, TermVarMapping *map);
+  void solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int level = 0);
 };
 
 class Clause {
 public:
   CompoundTerm *head;
   Goal *body;
-  Clause(CompoundTerm *h, Goal *t) : head(h), body(t) {}
+  Clause(CompoundTerm *h, Goal *b) : head(h), body(b) {}
   Clause *copy() {
-    return new Clause(head->copy2(), body==NULL ? NULL : body->copy());
+    return new Clause(head->copy2(), body == NULL ? NULL : body->copy());
   }
   void print() {
     head->print();
@@ -135,68 +139,48 @@ class Program {
 public:
   Clause *clause;
   Program *next;
-  Program(Clause *h, Program *t) : clause(h), next(t) {}
+  Program(Clause *c, Program *n) : clause(c), next(n) {}
 };
 
 class Trail {
 private:
  Variable *var;
  Trail *next;
- static Trail *sofar;
- Trail(Variable *h, Trail *t) : var(h), next(t) {}
+ static Trail *top;
+ Trail(Variable *v, Trail *n) : var(v), next(n) {}
 public:
-  static Trail *Note() { return sofar; }
-  static void Push(Variable *x) { sofar = new Trail(x, sofar); }
-  static void Undo(Trail *whereto) {
-    for (; sofar != whereto; sofar = sofar->next)
-      sofar->var->reset();
+  static Trail *Top() { return top; }
+  static void Push(Variable *v) { top = new Trail(v, top); }
+  static void Undo(Trail *t) {
+    for (; top != t; top = top->next)
+      top->var->reset();
   }
 };
-Trail *Trail::sofar = NULL;
+Trail *Trail::top = NULL;
 
 bool Variable::unify(Term *t) {
-  if (instance != this) return instance->unify(t);
+  if (instance != NULL) return instance->unify(t);
   Trail::Push(this);
   instance = t;
   return true;
 }
 Term *Variable::copy() {
-  if (instance == this)
+  if (instance == NULL)
   {
     Trail::Push(this);
-    instance = new Variable();
+    instance = new Variable(/*varname?*/);
   }
   return instance;
 }
 
-class TermVarMapping {
-private:
-  Variable **varvar;
-  const char **vartext;
-  int size;
-public:
-  TermVarMapping(Variable *vv[], const char *vt[], int vs) :varvar(vv), vartext(vt), size(vs) {}
-  void showanswer() {
-    if (size == 0)
-      cout << "yes\n";
-    else {
-      for (int i = 0; i < size; i++) {
-        cout << vartext[i] << " = ";
-        varvar[i]->print();
-        cout << "\n";
-      }
-    }
-  }
-};
-
-void Goal::solve(Program *p, int level, TermVarMapping *map)
+void Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int level)
 {
   indent(level);
   cout << "solve@"  << level << ": ";
   this->print();
   cout << "\n";
   for (Program *q = p; q != NULL; q = q->next) { 
-    Trail *t = Trail::Note();
+    Trail *t = Trail::Top();
     Clause *c = q->clause->copy();
     Trail::Undo(t);
     indent(level); cout << "  try: "; c->print(); cout << "\n";
@@ -224,38 +208,35 @@ CompoundTerm *f_1 = new CompoundTerm(new Atom("1"));
 CompoundTerm *f_2 = new CompoundTerm(new Atom("2"));
 CompoundTerm *f_3 = new CompoundTerm(new Atom("3"));
 
-// append(nil, X, X).
-Term *v_x = new Variable();
+Term *v_x = new Variable("x");
 CompoundTerm *lhs1 = new CompoundTerm(at_append, f_nil, v_x, v_x);
-Clause *c1 = new Clause(lhs1, NULL);
 
-// append(pair(X, L), M, pair(X, N) :- append(L, M, N).
-Term *v_l = new Variable();
-Term *v_m = new Variable();
-Term *v_n = new Variable();
+Clause *c1 = new Clause(lhs1, NULL); // append(nil, x, x).
+
+Term *v_l = new Variable("l");
+Term *v_m = new Variable("m");
+Term *v_n = new Variable("n");
 CompoundTerm *rhs2 = new CompoundTerm(at_append, v_l, v_m, v_n);
 CompoundTerm *lhs2 = new CompoundTerm(at_append, new CompoundTerm(at_pair, v_x, v_l), v_m, new CompoundTerm(at_pair, v_x, v_n));
-Clause *c2 = new Clause(lhs2, new Goal(rhs2,NULL));
 
-// append(I, J, pair(1, pair(2, pair(3, nil)))).
-Variable *v_i = new Variable();
-Variable *v_j = new Variable();
+Clause *c2 = new Clause(lhs2, new Goal(rhs2,NULL)); // append(pair(x, l), m, pair(x, n)) :- append(l, m, n).
+
+Variable *v_i = new Variable("I");
+Variable *v_j = new Variable("J");
 CompoundTerm *rhs3 = new CompoundTerm(at_append, v_i, v_j,  new CompoundTerm(at_pair, f_1, new CompoundTerm(at_pair, f_2, new CompoundTerm(at_pair, f_3, f_nil))));
 
-Goal *g1 = new Goal(rhs3, NULL);
+Goal *g1 = new Goal(rhs3, NULL); // ?- append(I, J, pair(1, pair(2, pair(3, nil)))).
 
-Program *test_p = new Program(c1, new Program(c2, NULL));
+Program *test_p1 = new Program(c1, new Program(c2, NULL));
 Program *test_p2 = new Program(c2, new Program(c1, NULL));
 
-Variable *varvar[] = {v_i, v_j};
-const char *varname[] =  {"I", "J"};
-TermVarMapping *var_name_map = new TermVarMapping(varvar, varname, 2);
+Variable *vars[] = {v_i, v_j};
 
 int main(int argc, const char *argv[])
 {
    cout << "=======Append with normal clause order:\n";
-   g1->solve(test_p, 0, var_name_map);
+   g1->solve(test_p1, vars, 2);
    cout << "\n=======Append with reversed normal clause order:\n";
-   g1->solve(test_p2, 0, var_name_map);
+   g1->solve(test_p2, vars, 2);
    return 0;
 }
