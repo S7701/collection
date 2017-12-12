@@ -3,7 +3,7 @@
 // Copyright (c) Alan Mycroft, University of Cambridge, 2000.
 
 #include <iostream>
-#include <cstring.h>
+#include <cstring>
 using namespace std;
 
 void indent(int n) {
@@ -15,7 +15,7 @@ private:
   const char *name;
 	int len;
 public:
-  Atom(const char *n) : name(n), len(strlen(s)) {}
+  Atom(const char *n) : name(n), len(strlen(n)) {}
   void print() { cout << name; }
   bool eq(Atom *other) { return ((len == other->len) && (strcmp(name, other->name) == 0)); }
 };
@@ -76,6 +76,7 @@ private:
   static int varcount;
 public:
   Variable(const char *n = NULL) : instance(NULL), varname(n), varno(++varcount) {}
+  const char *name() const { return varname; }
   void print() {
     if (instance != NULL)
       instance->print();
@@ -187,9 +188,21 @@ void Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned in
     if (term->unify(c->head)) {
       Goal *gdash = c->body == NULL ? next : c->body->append(next);
       if (gdash == NULL)
-        map->showanswer();
+      {
+        if (numvars == 0)
+          cout << "yes\n";
+        else
+        {
+          for (unsigned int i = 0; i < numvars; i++)
+          {
+            cout << "@" << vars[i]->name() << " = ";
+            vars[i]->print();
+            cout << "\n";
+          }
+        }
+      }
       else
-        gdash->solve(p, level + 1, map);
+        gdash->solve(p, vars, numvars, level + 1);
     }
     else {
       indent(level);
