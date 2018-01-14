@@ -7,19 +7,12 @@ using namespace std;
 
 class Atom;
 class Number;
-class Variable;
 class CompoundTerm;
+class Variable;
 
 class Term {
 public:
   typedef list<Term*> List;
-  virtual void print() const = 0;
-  virtual bool unify(Term* t) = 0;
-  virtual bool unifyAtom(Atom* t) { return false; }
-  virtual bool unifyNumber(Number* t) { return false; }
-  virtual bool unifyVariable(Variable* t) { return false; }
-  virtual bool unifyCompoundTerm(CompoundTerm* t) { return false; }
-  virtual Term* copy() = 0;
   static void Print(const List& l, const string& s) {
     for (auto it = l.begin();;) {
       (*it)->print();
@@ -27,6 +20,14 @@ public:
       cout << s;
     }
   }
+public:
+  virtual void print() const = 0;
+  virtual bool unify(Term* t) = 0;
+  virtual bool unifyAtom(Atom* a) { return false; }
+  virtual bool unifyNumber(Number* n) { return false; }
+  virtual bool unifyCompoundTerm(CompoundTerm* ct) { return false; }
+  virtual bool unifyVariable(Variable* v) { return false; }
+  virtual Term* copy() = 0;
 };
 
 class Atom: public Term {
@@ -36,11 +37,10 @@ public:
   Atom(const string& n): name(n) {}
   Atom(Atom* a) : name(a->name) {}
   void print() const { cout << name; }
-  bool unify(Term* t) { 
-    return t->unifyAtom(this);
-  }
+  bool unify(Term* t) { return t->unifyAtom(this); }
   virtual bool unifyAtom(Atom* a) {
-    if (name == a->name) return true;
+    if (name == a->name)
+      return true;
     return false;
   }
   Term* copy() {
@@ -64,6 +64,40 @@ public:
   Term* copy() {
     return new Number(this);
   }
+};
+
+class CompoundTerm: public Term {
+private:
+  string functor;
+  unsigned int arity;
+  Term::List args;
+public:
+  CompoundTerm(string f): functor(f), arity(0) {}
+  CompoundTerm(CompoundTerm* ct): functor(ct->functor), arity(ct->arity) {
+    for (auto it = ct->args.begin(); it != ct->args.end(); ++it)
+      args.push_back((*it)->copy());
+  }
+  void add(Term* arg) { args.push_back(arg); ++arity; }
+  void print() const {
+    cout << functor;
+    if (!args.empty()) {
+      cout << "(";
+      Term::Print(args, ", ");
+      cout << ")";
+    }
+  };
+  bool unify(Term* t) { return t->unifyCompoundTerm(this); }
+  bool unifyCompoundTerm(CompoundTerm* ct) {
+    if ((functor != ct->functor) || (arity != ct->arity))
+      return false;
+    auto it1 = args.begin();
+    auto it2 = ct->args.begin();
+    for (unsigned int i = 0; i < arity; ++i)
+      if (!(*it1++)->unify(*it2++))
+        return false;
+    return true;
+  }
+  Term* copy() { return new CompoundTerm(this); }
 };
 
 class Variable: public Term {
@@ -97,14 +131,17 @@ public:
     else
       cout << "#" << nr;
   };
-  bool unify(Term* t) { return t->unifyVariable(this); }
-  bool unifyVariable(Variable* v) {
+  bool unify(Term* t) {
     if (term != NULL)
-      return term->unify(v);
+      return term->unify(t);
     trail.push_back(this);
-    term = v;
+    term = t;
     return true;
   }
+  bool unifyAtom(Atom* a) { return unify(a); }
+  bool unifyNumber(Number* n) { return unify(n); }
+  bool unifyCompoundTerm(CompoundTerm* ct) { return unify(ct); }
+  bool unifyVariable(Variable* v) { return unify(v); }
   Term* copy() {
     if (term == NULL) {
       trail.push_back(this);
@@ -117,40 +154,6 @@ public:
 
 unsigned int Variable::count = 0;
 list<Variable*> Variable::trail;
-
-class CompoundTerm: public Term {
-private:
-  string functor;
-  unsigned int arity;
-  Term::List args;
-public:
-  CompoundTerm(string f): functor(f), arity(0) {}
-  CompoundTerm(CompoundTerm* ct): functor(ct->functor), arity(ct->arity) {
-    for (auto it = ct->args.begin(); it != ct->args.end(); ++it)
-      args.push_back((*it)->copy());
-  }
-  add(Term* arg) { args.push_back(arg); ++arity; }
-  void print() const {
-    cout << functor;
-    if (!args.empty()) {
-      cout << "(";
-      Term::Print(args, ", ");
-      cout << ")";
-    }
-  };
-  bool unify(Term* t) { return t->unifyCompoundTerm(this); }
-  bool unifyCompoundTerm(CompoundTerm* ct) {
-    if ((functor != ct->functor) || (arity != ct->arity))
-      return false;
-    auto it1 = args.begin();
-    auto it2 = ct->args.begin();
-    for (unsigned int i = 0; i < arity; ++i)
-      if (!(*it1++)->unify(*it2++))
-        return false;
-    return true;
-  }
-  Term* copy() { return new CompoundTerm(this); }
-};
 
 class Clause {
 private:
@@ -183,11 +186,10 @@ void indent(unsigned int n) {
 class Program {
 private:
   Clause::List clauses;
-  Term::List query;
+  ;
 public:
-  addClause(Clause* c) { clauses.push_back(c); }
-  addQuery(Term* q) { query.push_back(q); }
-  void solve(unsigned int level = 0) {
+  void addClause(Clause* c) { clauses.push_back(c); }
+  void solve(Term::List query, unsigned int level = 0) {
     indent(level);
     cout << "solve@"  << level << ": ";
     Term::Print(query, "; ");
@@ -214,8 +216,9 @@ int main(int argc, const char* const argv[]) {
   ct = new CompoundTerm("ist kind von");
   ct->add(new Variable("X"));
   ct->add(new Atom("Nicki"));
-  p->addQuery(ct);
   // 
-  p->solve();
+  Term::List q;
+  q.push_back(ct);
+  p->solve(q);
   return 0;
 }
