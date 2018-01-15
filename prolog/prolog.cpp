@@ -192,7 +192,8 @@ public:
     cout << "solve@"  << level << ": ";
     Term::Print(query, "; ");
     cout << "\n";
-    for (auto q = clauses.begin(); q != clauses.end(); ++q) { 
+    for (auto it = clauses.begin(); it != clauses.end(); ++it) {
+      (*it)->getHead()->unify();
     }
   }
 };
