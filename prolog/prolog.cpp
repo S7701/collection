@@ -162,6 +162,8 @@ private:
 public:
   typedef list<Clause*> List;
   Clause(Term* h) : head(h) {}
+  Term* getHead() const { return head; }
+  Term::List& getBody() const { return body; }
   void add(Term* t) { body.push_back(t); }
   Clause* copy() {
     Clause* c = new Clause(head->copy());
@@ -189,7 +191,12 @@ private:
   ;
 public:
   void addClause(Clause* c) { clauses.push_back(c); }
-  void solve(Term::List query, unsigned int level = 0) {
+  void solve(CompoundTerm* q) {
+    Term::List ql;
+    ql.push_back(q);
+    solve(ql);
+  }
+  void solve(Term::List& query, unsigned int level = 0) {
     indent(level);
     cout << "solve@"  << level << ": ";
     Term::Print(query, "; ");
@@ -201,25 +208,25 @@ public:
 };
 
 int main(int argc, const char* const argv[]) {
+  Atom* aNicki = new Atom("Nicki");
+  Atom* aNico = new Atom("Nico");
+  Atom* aLuca = new Atom("Luca");
   CompoundTerm* ct;
   Program* p = new Program();
   // "ist kind von"(Nico, Nicki)
   ct = new CompoundTerm("ist kind von");
-  ct->add(new Atom("Nico"));
-  ct->add(new Atom("Nicki"));
+  ct->add(aNico);
+  ct->add(aNicki);
   p->addClause(new Clause(ct));
   // "ist kind von"(Luca, Nicki)
   ct = new CompoundTerm("ist kind von");
-  ct->add(new Atom("Luca"));
-  ct->add(new Atom("Nicki"));
+  ct->add(aLuca);
+  ct->add(aNicki);
   p->addClause(new Clause(ct));
-  // "ist kind von"(#X, Nicki)
+  // "ist kind von"(Kind?, Nicki)
   ct = new CompoundTerm("ist kind von");
-  ct->add(new Variable("X"));
-  ct->add(new Atom("Nicki"));
-  // 
-  Term::List q;
-  q.push_back(ct);
-  p->solve(q);
+  ct->add(new Variable("Kind"));
+  ct->add(aNicki);
+  p->solve(ct);
   return 0;
 }
