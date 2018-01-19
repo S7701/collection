@@ -57,13 +57,15 @@ public:
 private:
   CompoundTerm(CompoundTerm *other)
   : fsym(other->fsym), arity(other->arity), args(other->arity == 0 ? NULL : new Term*[other->arity]) {
-    for (int i = 0; i < arity; ++i) args[i] = other->args[i]->copy();
+    for (int i = 0; i < arity; ++i)
+      args[i] = other->args[i]->copy();
   }
   bool unify2(CompoundTerm *other) { 
     if (!(fsym->eq(other->fsym) && arity == other->arity))
       return false;
     for (int i = 0; i < arity; i++)
-      if (!args[i]->unify(other->args[i])) return false;
+      if (!args[i]->unify(other->args[i]))
+        return false;
     return true;
   }
 };
@@ -73,6 +75,7 @@ private:
   Term *instance;
   const char *varname;
   int varno;
+private:
   static int varcount;
 public:
   Variable(const char *n = NULL) : instance(NULL), varname(n), varno(++varcount) {}
@@ -80,10 +83,11 @@ public:
   void print() {
     if (instance != NULL)
       instance->print();
-    else if (varname != NULL)
-      cout << "@" << varname;
-    else
+    else {
+      if (varname != NULL)
+        cout << varname;
       cout << "#" << varno;
+    }
   };
   bool unify(Term *t);
   Term *copy();
@@ -93,8 +97,39 @@ private:
 };
 int Variable::varcount = 0;
 
+class Trail {
+private:
+ Variable *var;
+ Trail *next;
+ Trail(Variable *v, Trail *n) : var(v), next(n) {}
+private:
+ static Trail *top;
+public:
+  static Trail *Top() { return top; }
+  static void Push(Variable *v) { top = new Trail(v, top); }
+  static void Undo(Trail *t) {
+    for (; top != t; top = top->next)
+      top->var->reset();
+  }
+};
+Trail *Trail::top = NULL;
+
+bool Variable::unify(Term *t) {
+  if (instance != NULL) return instance->unify(t);
+  Trail::Push(this);
+  instance = t;
+  return true;
+}
+Term *Variable::copy() {
+  if (instance == NULL)
+  {
+    Trail::Push(this);
+    instance = new Variable(/*varname?*/);
+  }
+  return instance;
+}
+
 class Program;
-class TermVarMapping;
 
 class Goal {
 private:
@@ -142,37 +177,6 @@ public:
   Program *next;
   Program(Clause *c, Program *n) : clause(c), next(n) {}
 };
-
-class Trail {
-private:
- Variable *var;
- Trail *next;
- static Trail *top;
- Trail(Variable *v, Trail *n) : var(v), next(n) {}
-public:
-  static Trail *Top() { return top; }
-  static void Push(Variable *v) { top = new Trail(v, top); }
-  static void Undo(Trail *t) {
-    for (; top != t; top = top->next)
-      top->var->reset();
-  }
-};
-Trail *Trail::top = NULL;
-
-bool Variable::unify(Term *t) {
-  if (instance != NULL) return instance->unify(t);
-  Trail::Push(this);
-  instance = t;
-  return true;
-}
-Term *Variable::copy() {
-  if (instance == NULL)
-  {
-    Trail::Push(this);
-    instance = new Variable(/*varname?*/);
-  }
-  return instance;
-}
 
 void Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int level)
 {
