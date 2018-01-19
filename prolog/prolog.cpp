@@ -105,13 +105,13 @@ private:
   static unsigned int count;
   static list<Variable*> trail;
 public:
-  static Variable* Trailhead() { return trail.front(); }
+  static Variable* GetTrailhead() { return trail.back(); }
   static void Rewind(Variable* to) {
-    Variable* v = trail.front();
+    Variable* v = trail.back();
     while (v != to) {
       v->reset();
-      trail.pop_front();
-      v = trail.front();
+      trail.pop_back();
+      v = trail.back();
     }
   }
 private:
@@ -188,21 +188,44 @@ void indent(unsigned int n) {
 class Program {
 private:
   Clause::List clauses;
-  ;
 public:
   void addClause(Clause* c) { clauses.push_back(c); }
-  void solve(CompoundTerm* q) {
-    Term::List ql;
-    ql.push_back(q);
-    solve(ql);
+  void solve(CompoundTerm* q, unsigned int level = 0) {
+    indent(level);
+    cout << "solve@"  << level << ": ";
+    q->print();
+    cout << "\n";
+    for (auto it = clauses.begin(); it != clauses.end(); ++it) {
+      Variable* trailhead = Variable::GetTrailhead();
+      Clause* c = (*it);
+      Term* head = c->getHead();
+      indent(level);
+      cout << "  try: ";
+      c->print();
+      cout << "\n";
+      if (q->unify(head)) {
+        Term::List& body c->getBody();
+        if (body.empty()) {
+          
+        }
+        else
+          solve(body, level);
+      }
+      else {
+        indent(level);
+        cout << "  nomatch.\n";
+      }
+      Variable::Rewind(trailhead);
+    }
   }
   void solve(Term::List& query, unsigned int level = 0) {
     indent(level);
     cout << "solve@"  << level << ": ";
     Term::Print(query, "; ");
     cout << "\n";
-    for (auto it = clauses.begin(); it != clauses.end(); ++it) {
-      (*it)->getHead()->unify();
+    for (auto it = query.begin(); it != query.end(); ++it) {
+      CompoundTerm* q = (*it);
+      solve(q, level);
     }
   }
 };
