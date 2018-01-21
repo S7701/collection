@@ -102,8 +102,9 @@ public:
 
 class Variable: public Term {
 private:
+  typedef list<Variable*> List;
   static unsigned int count;
-  static list<Variable*> trail;
+  static List trail;
 public:
   static Variable* GetTrailhead() { return trail.back(); }
   static void Rewind(Variable* to) {
