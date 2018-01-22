@@ -102,10 +102,10 @@ public:
 
 class Variable: public Term {
 private:
-  typedef list<Variable*> List;
   static unsigned int count;
   static List trail;
 public:
+  typedef list<Variable*> List;
   static Variable* GetTrailhead() { return trail.back(); }
   static void Rewind(Variable* to) {
     Variable* v = trail.back();
@@ -124,6 +124,7 @@ public:
   : term(NULL), nr(count++) {}
   Variable(const string& n)
   : name(n), term(NULL), nr(count++) {}
+  string& getName() const { return name; }
   void print() const {
     if (term != NULL)
       term->print();
@@ -191,7 +192,7 @@ private:
   Clause::List clauses;
 public:
   void addClause(Clause* c) { clauses.push_back(c); }
-  void solve(CompoundTerm* q, unsigned int level = 0) {
+  void solve(CompoundTerm* q, Variable::List& vars, unsigned int level = 0) {
     indent(level);
     cout << "solve@"  << level << ": ";
     q->print();
@@ -207,7 +208,10 @@ public:
       if (q->unify(head)) {
         Term::List& body c->getBody();
         if (body.empty()) {
-          
+          for (auto it = vars.begin(); it != vars.end(); ++it) {
+            cout << (*it)->getName() << " = ";
+            (*it)->print();
+          }
         }
         else
           solve(body, level);
@@ -219,7 +223,7 @@ public:
       Variable::Rewind(trailhead);
     }
   }
-  void solve(Term::List& query, unsigned int level = 0) {
+  void solve(Term::List& query, Variable::List& vars, unsigned int level = 0) {
     indent(level);
     cout << "solve@"  << level << ": ";
     Term::Print(query, "; ");
@@ -249,8 +253,10 @@ int main(int argc, const char* const argv[]) {
   p->addClause(new Clause(ct));
   // "ist kind von"(Kind?, Nicki)
   ct = new CompoundTerm("ist kind von");
-  ct->add(new Variable("Kind"));
+  Variable* v = new Variable("Kind");
+  ct->add(v);
   ct->add(aNicki);
-  p->solve(ct);
+  Variable::List vl; vl.push_back(v);
+  p->solve(ct, vl);
   return 0;
 }
