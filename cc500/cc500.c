@@ -76,40 +76,40 @@ void get_token()
       nextc = getchar();
     i = 0;
     while ((('a' <= nextc) & (nextc <= 'z')) |
-	   (('0' <= nextc) & (nextc <= '9')) | (nextc == '_'))
+           (('0' <= nextc) & (nextc <= '9')) | (nextc == '_'))
       takechar();
     if (i == 0)
       while ((nextc == '<') | (nextc == '=') | (nextc == '>') |
-	     (nextc == '|') | (nextc == '&') | (nextc == '!'))
-	takechar();
+             (nextc == '|') | (nextc == '&') | (nextc == '!'))
+        takechar();
     if (i == 0) {
       if (nextc == 39) {
-	takechar();
-	while (nextc != 39)
-	  takechar();
-	takechar();
+        takechar();
+        while (nextc != 39)
+          takechar();
+        takechar();
       }
       else if (nextc == '"') {
-	takechar();
-	while (nextc != '"')
-	  takechar();
-	takechar();
+        takechar();
+        while (nextc != '"')
+          takechar();
+        takechar();
       }
       else if (nextc == '/') {
-	takechar();
-	if (nextc == '*') {
-	  nextc = getchar();
-	  while (nextc != '/') {
-	    while (nextc != '*')
-	      nextc = getchar();
-	    nextc = getchar();
-	  }
-	  nextc = getchar();
-	  w = 1;
-	}
+        takechar();
+        if (nextc == '*') {
+          nextc = getchar();
+          while (nextc != '/') {
+            while (nextc != '*')
+              nextc = getchar();
+            nextc = getchar();
+          }
+          nextc = getchar();
+          w = 1;
+        }
       }
       else if (nextc != 0-1)
-	takechar();
+        takechar();
     }
     token[i] = 0;
   }
@@ -155,7 +155,7 @@ void save_int(char *p, int n)
 int load_int(char *p)
 {
   return ((p[0] & 255) + ((p[1] & 255) << 8) +
-	  ((p[2] & 255) << 16) + ((p[3] & 255) << 24));
+          ((p[2] & 255) << 16) + ((p[3] & 255) << 24));
 }
 
 void emit(int n, char *s)
@@ -378,7 +378,7 @@ int primary_expr()
       error();
   }
   else if ((token[0] == 39) & (token[1] != 0) &
-	   (token[2] == 39) & (token[3] == 0)) {
+           (token[2] == 39) & (token[3] == 0)) {
     emit(5, "\xb8...."); /* mov $x,%eax */
     save_int(code + codepos - 4, token[1]);
     type = 3;
@@ -389,21 +389,21 @@ int primary_expr()
     int k;
     while (token[j] != '"') {
       if ((token[j] == 92) & (token[j + 1] == 'x')) {
-	if (token[j + 2] <= '9')
-	  k = token[j + 2] - '0';
-	else
-	  k = token[j + 2] - 'a' + 10;
-	k = k << 4;
-	if (token[j + 3] <= '9')
-	  k = k + token[j + 3] - '0';
-	else
-	  k = k + token[j + 3] - 'a' + 10;
-	token[i] = k;
-	j = j + 4;
+        if (token[j + 2] <= '9')
+          k = token[j + 2] - '0';
+        else
+          k = token[j + 2] - 'a' + 10;
+        k = k << 4;
+        if (token[j + 3] <= '9')
+          k = k + token[j + 3] - '0';
+        else
+          k = k + token[j + 3] - 'a' + 10;
+        token[i] = k;
+        j = j + 4;
       }
       else {
-	token[i] = token[j];
-	j = j + 1;
+        token[i] = token[j];
+        j = j + 1;
       }
       i = i + 1;
     }
@@ -460,9 +460,9 @@ int postfix_expr()
       be_push();
       stack_pos = stack_pos + 1;
       while (accept(",")) {
-	promote(expression());
-	be_push();
-	stack_pos = stack_pos + 1;
+        promote(expression());
+        be_push();
+        stack_pos = stack_pos + 1;
       }
       expect(")");
     }
@@ -534,7 +534,7 @@ int relational_expr()
     binary1(type);
     /* pop %ebx ; cmp %eax,%ebx ; setle %al ; movzbl %al,%eax */
     type = binary2(shift_expr(),
-		   9, "\x5b\x39\xc3\x0f\x9e\xc0\x0f\xb6\xc0");
+                   9, "\x5b\x39\xc3\x0f\x9e\xc0\x0f\xb6\xc0");
   }
   return type;
 }
@@ -553,13 +553,13 @@ int equality_expr()
       binary1(type);
       /* pop %ebx ; cmp %eax,%ebx ; sete %al ; movzbl %al,%eax */
       type = binary2(relational_expr(),
-		     9, "\x5b\x39\xc3\x0f\x94\xc0\x0f\xb6\xc0");
+                     9, "\x5b\x39\xc3\x0f\x94\xc0\x0f\xb6\xc0");
     }
     else if (accept("!=")) {
       binary1(type);
       /* pop %ebx ; cmp %eax,%ebx ; setne %al ; movzbl %al,%eax */
       type = binary2(relational_expr(),
-		     9, "\x5b\x39\xc3\x0f\x95\xc0\x0f\xb6\xc0");
+                     9, "\x5b\x39\xc3\x0f\x95\xc0\x0f\xb6\xc0");
     }
     else
       return type;
@@ -735,18 +735,18 @@ void program()
       int n = table_pos;
       number_of_args = 0;
       while (accept(")") == 0) {
-	number_of_args = number_of_args + 1;
-	type_name();
-	if (peek(")") == 0) {
-	  sym_declare(token, 'A', number_of_args);
-	  get_token();
-	}
-	accept(","); /* ignore trailing comma */
+        number_of_args = number_of_args + 1;
+        type_name();
+        if (peek(")") == 0) {
+          sym_declare(token, 'A', number_of_args);
+          get_token();
+        }
+        accept(","); /* ignore trailing comma */
       }
       if (accept(";") == 0) {
-	sym_define_global(current_symbol);
-	statement();
-	emit(1, "\xc3"); /* ret */
+        sym_define_global(current_symbol);
+        statement();
+        emit(1, "\xc3"); /* ret */
       }
       table_pos = n;
     }

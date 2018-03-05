@@ -1,0 +1,25 @@
+{
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "(gdb) Launch",
+                "type": "cppdbg",
+                "request": "launch",
+                "program": "C:\\Users\\Besitzer\\Documents\\GitHub\\collection\\cc500\\cc500d.exe",
+                "args": ["-s", "-d", "hello.c"],
+                "stopAtEntry": false,
+                "cwd": "C:\\Users\\Besitzer\\Documents\\GitHub\\collection\\cc500",
+                "environment": [],
+                "externalConsole": true,
+                "MIMode": "gdb",
+                "miDebuggerPath": "C:\\MinGW64\\bin\\gdb.exe",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
+        ]
+    }
