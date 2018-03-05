@@ -450,7 +450,7 @@ int main(int argc, char **argv)
         "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCMP  EXIT    ";
               
   p = "break case char default else enum if int return sizeof struct switch while "
-      "open read close printf malloc memset memcmp exit void main";
+      "open read write close printf malloc free memset memcmp exit void main";
   i = Break; while (i <= While) { next(); id->tk = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id->class = Sys; id->type = INT; id->val = i++; } // add library to symbol table
   next(); id->tk = Char; // handle void type
