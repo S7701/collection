@@ -6,12 +6,6 @@
 
 // Written by Robert Swierczek
 
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <memory.h>
-#include <fcntl.h>
-
 char *p, *lp, // current position in source code
      *data,   // data/bss pointer
      *ops;    // opcodes
@@ -39,9 +33,9 @@ struct ident_s {
   int type;
   int val;
   int stype;
-  int hclass;
-  int htype;
-  int hval;
+  int hclass; // hidden class
+  int htype;  // hidden type
+  int hval;   // hidden value
 } *id,  // currently parsed identifier
   *sym; // symbol table (simple list of identifiers)
 
@@ -550,13 +544,16 @@ int main(int argc, char **argv)
         next(); i = 0;
         while (tk != ')') {
           ty = INT;
-          if (tk == Int) next();
-          else if (tk == Char) { next(); ty = CHAR; }
-          else if (tk == Struct) {
-            next(); 
-            if (tk != Id) { printf("%d: bad struct declaration\n", line); return -1; }
-            ty = id->stype;
-            next();
+          switch (tk) {
+            case Int:  next(); break;
+            case Char: next(); ty = CHAR; break;
+            case Struct: {
+              next(); 
+              if (tk != Id) { printf("%d: bad struct declaration\n", line); return -1; }
+              ty = id->stype;
+              next();
+              break;
+            }
           }
           while (tk == Mul) { next(); ty = ty + PTR; }
           if (tk != Id) { printf("%d: bad parameter declaration\n", line); return -1; }
@@ -572,10 +569,14 @@ int main(int argc, char **argv)
         loc = ++i;
         next();
         while (tk == Int || tk == Char || tk == Struct) {
-          if (tk == Int) bt = INT; else if (tk == Char) bt = CHAR; else {
-            next(); 
-            if (tk != Id) { printf("%d: bad struct declaration\n", line); return -1; }
-            bt = id->stype;
+          switch (tk) {
+            case Int:  bt = Int; break;
+            case Char: bt = Char; break;
+            default: {
+              next(); 
+              if (tk != Id) { printf("%d: bad struct declaration\n", line); return -1; }
+              bt = id->stype;
+            }
           }
           next();
           while (tk != ';') {
@@ -634,20 +635,20 @@ int main(int argc, char **argv)
       if (i <= ADJUST) printf(" %d\n", *pc); else printf("\n");
     }
     switch (i) {
-    case LEA: a = (int)(bp + *pc++); break;                         // load local address
-    case IMM: a = *pc++; break;                                     // load global address or immediate
-    case JMP: pc = (int *)*pc; break;                               // jump
-    case JSR: *--sp = (int)(pc + 1); pc = (int *)*pc; break;        // jump to subroutine
-    case JZ:  pc = a ? pc + 1 : (int *)*pc; break;                  // branch if zero
-    case JNZ: pc = a ? (int *)*pc : pc + 1; break;                  // branch if not zero
-    case ENTER: *--sp = (int)bp; bp = sp; sp = sp - *pc++; break;     // enter subroutine
+    case LEA:    a = (int)(bp + *pc++); break;                         // load local address
+    case IMM:    a = *pc++; break;                                     // load global address or immediate
+    case JMP:    pc = (int *)*pc; break;                               // jump
+    case JSR:    *--sp = (int)(pc + 1); pc = (int *)*pc; break;        // jump to subroutine
+    case JZ:     pc = a ? pc + 1 : (int *)*pc; break;                  // branch if zero
+    case JNZ:    pc = a ? (int *)*pc : pc + 1; break;                  // branch if not zero
+    case ENTER:  *--sp = (int)bp; bp = sp; sp = sp - *pc++; break;     // enter subroutine
     case ADJUST: sp = sp + *pc++; break;                               // stack adjust
-    case LEAVE: sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; break; // leave subroutine
-    case LDI:  a = *(int *)a; break;                                 // load int
-    case LDB:  a = *(char *)a; break;                                // load char
-    case STI:  *(int *)*sp++ = a; break;                             // store int
-    case STB:  a = *(char *)*sp++ = a; break;                        // store char
-    case PUSH: *--sp = a; break;                                     // push
+    case LEAVE:  sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; break; // leave subroutine
+    case LDI:    a = *(int *)a; break;                                 // load int
+    case LDB:    a = *(char *)a; break;                                // load char
+    case STI:    *(int *)*sp++ = a; break;                             // store int
+    case STB:    a = *(char *)*sp++ = a; break;                        // store char
+    case PUSH:   *--sp = a; break;                                     // push
 
     case OR:  a = *sp++ |  a; break;
     case XOR: a = *sp++ ^  a; break;
@@ -666,17 +667,17 @@ int main(int argc, char **argv)
     case DIV: a = *sp++ /  a; break;
     case MOD: a = *sp++ %  a; break;
 
-    case OPEN: a = open((char *)sp[1], *sp); break;
-    case READ: a = read(sp[2], (char *)sp[1], *sp); break;
-    case WRITE: a = write(sp[2], (char *)sp[1], *sp); break;
-    case CLOSE: a = close(*sp); break;
+    case OPEN:   a = open((char *)sp[1], *sp); break;
+    case READ:   a = read(sp[2], (char *)sp[1], *sp); break;
+    case WRITE:  a = write(sp[2], (char *)sp[1], *sp); break;
+    case CLOSE:  a = close(*sp); break;
     case PRINTF: t = sp + pc[1]; a = printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]); break;
     case MALLOC: a = (int)malloc(*sp); break;
-    case FREE: free(*sp); break;
+    case FREE:   free(*sp); break;
     case MEMSET: a = (int)memset((char *)sp[2], sp[1], *sp); break;
     case MEMCMP: a = memcmp((char *)sp[2], (char *)sp[1], *sp); break;
-    case EXIT: printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp;
-    default: printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1;
+    case EXIT:   printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp;
+    default:     printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1;
     }
   }
 }
