@@ -7,4 +7,4 @@ release: cc500.c
 	gcc $(GPPFLAGS) -o cc500$(EXT) $<
 
 debug: cc500.c
-	gcc $(GPPFLAGS) -g -o cc500$(EXT) $<
+	gcc $(GPPFLAGS) -g -o cc500d$(EXT) $<
