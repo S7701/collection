@@ -1,5 +1,10 @@
 EXT := .exe
+
+ifeq ($(OS),Windows_NT)
+GCCFLAGS := -w
+else
 GCCFLAGS := -w -m32
+endif
 
 all: c5 c5d c5x86 c5x86d
 
