@@ -616,12 +616,13 @@ int main(int argc, char **argv)
   }
 
   if (!(pc = (int *)idmain->val)) { printf("main() not defined\n"); return -1; }
-  if (src) return 0;
+//  if (src) return 0;
 
+  // call exit if main returns
+  *++e = PUSH; t = e;
+  *++e = EXIT;
   // setup stack
   sp = (int *)((int)sp + poolsz);
-  *--sp = EXIT; // call exit if main returns
-  *--sp = PUSH; t = sp;
   *--sp = argc;
   *--sp = (int)argv;
   *--sp = (int)t;

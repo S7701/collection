@@ -1,10 +1,16 @@
 EXT := .exe
-GPPFLAGS := -w -O
+GCCFLAGS := -w -m32
 
-all: release debug
+all: c4 c4d c4x86 c4x86d
 
-release: c4.c
-	gcc $(GPPFLAGS) -o c4$(EXT) $<
+c4: c4.c
+	gcc $(GCCFLAGS) -O -o c4$(EXT) $<
 
-debug: c4.c
-	gcc $(GPPFLAGS) -g -o c4d$(EXT) $<
+c4d: c4.c
+	gcc $(GCCFLAGS) -g -o c4d$(EXT) $<
+
+c4x86: c4x86.c
+	gcc $(GCCFLAGS) -O -o c4x86$(EXT) $<
+
+c4x86d: c4x86.c
+	gcc $(GCCFLAGS) -g -o c4x86d$(EXT) $<
