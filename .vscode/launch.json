@@ -1,0 +1,84 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Launch c4 debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/c4/c4d.exe",
+            "args": ["-s", "-d", "hello.c"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/c4",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch c5 debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/c5/c5d.exe",
+            "args": ["-s", "-d", "hello.c"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/c5",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch c5x86 debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/c5/c5x86d.exe",
+            "args": ["-s", "-d", "hello.c"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/c5",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch cc500 debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cc500/cc500d.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cc500",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
