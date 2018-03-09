@@ -18,7 +18,8 @@
 #endif
 
 char *p, *lp, // current position in source code
-     *data;   // data/bss pointer
+     *data,   // data/bss pointer
+     *ops;    // opcodes
 
 int *e, *le,  // current position in emitted code
     *id,      // currently parsed identifier
@@ -39,9 +40,9 @@ enum {
 };
 
 // opcodes
-enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
+enum { LEA ,IMM ,JMP ,JSR ,JZ  ,JNZ ,ENTER ,ADJ ,LEAVE ,LDI  ,LDB  ,STI  ,STB  ,PUSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT };
+       OPEN,READ,WRITE,CLOSE,PRINTF,MALLOC,FREE,MEMSET,MEMCMP,MEMCPY,MMAP,DLSYM,QSORT,EXIT };
 
 // types
 enum { CHAR, INT, PTR };
@@ -60,9 +61,7 @@ void next()
         printf("%d: %.*s", line, p - lp, lp);
         lp = p;
         while (le < e) {
-          printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
-                           "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT,"[*++le * 5]);
+          printf("%.8s", &ops[*++le * 8]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
         }
       }
@@ -327,54 +326,54 @@ void gen(int *n)
   i = *n;
   if (i == Num) { *++e = IMM; *++e = n[1]; }
   else if (i == Loc) { *++e = LEA; *++e = n[1]; }
-  else if (i == Load) { gen(n+2); *++e = (n[1] == CHAR) ? LC : LI; }
-  else if (i == Assign) { gen((int *)n[2]); *++e = PSH; gen(n+3); *++e = (n[1] == CHAR) ? SC : SI; }
+  else if (i == Load) { gen(n+2); *++e = (n[1] == CHAR) ? LDB : LDI; }
+  else if (i == Assign) { gen((int *)n[2]); *++e = PUSH; gen(n+3); *++e = (n[1] == CHAR) ? STB : STI; }
   else if (i == Inc || i == Dec) {
     gen(n+2);
-    *++e = PSH; *++e = (n[1] == CHAR) ? LC : LI; *++e = PSH;
+    *++e = PUSH; *++e = (n[1] == CHAR) ? LDB : LDI; *++e = PUSH;
     *++e = IMM; *++e = (n[1] > PTR) ? sizeof(int) : sizeof(char);
     *++e = (i == Inc) ? ADD : SUB;
-    *++e = (n[1] == CHAR) ? SC : SI;
+    *++e = (n[1] == CHAR) ? STB : STI;
   }  
   else if (i == Cond) {
     gen((int *)n[1]);
-    *++e = BZ; b = ++e;
+    *++e = JZ; b = ++e;
     gen((int *)n[2]);
     if (n[3]) { *b = (int)(e + 3); *++e = JMP; b = ++e; gen((int *)n[3]); }
     *b = (int)(e + 1);
   }
-  else if (i == Lor) { gen((int *)n[1]); *++e = BNZ; b = ++e; gen(n+2); *b = (int)(e + 1); }
-  else if (i == Lan) { gen((int *)n[1]); *++e = BZ;  b = ++e; gen(n+2); *b = (int)(e + 1); }
-  else if (i == Or)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = OR; }
-  else if (i == Xor) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = XOR; }
-  else if (i == And) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = AND; }
-  else if (i == Eq)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = EQ; }
-  else if (i == Ne)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = NE; }
-  else if (i == Lt)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = LT; }
-  else if (i == Gt)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = GT; }
-  else if (i == Le)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = LE; }
-  else if (i == Ge)  { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = GE; }
-  else if (i == Shl) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = SHL; }
-  else if (i == Shr) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = SHR; }
-  else if (i == Add) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = ADD; }
-  else if (i == Sub) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = SUB; }
-  else if (i == Mul) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = MUL; }
-  else if (i == Div) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = DIV; }
-  else if (i == Mod) { gen((int *)n[1]); *++e = PSH; gen(n+2); *++e = MOD; }
+  else if (i == Lor) { gen((int *)n[1]); *++e = JNZ; b = ++e; gen(n+2); *b = (int)(e + 1); }
+  else if (i == Lan) { gen((int *)n[1]); *++e = JZ;  b = ++e; gen(n+2); *b = (int)(e + 1); }
+  else if (i == Or)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = OR; }
+  else if (i == Xor) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = XOR; }
+  else if (i == And) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = AND; }
+  else if (i == Eq)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = EQ; }
+  else if (i == Ne)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = NE; }
+  else if (i == Lt)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = LT; }
+  else if (i == Gt)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = GT; }
+  else if (i == Le)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = LE; }
+  else if (i == Ge)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = GE; }
+  else if (i == Shl) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = SHL; }
+  else if (i == Shr) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = SHR; }
+  else if (i == Add) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = ADD; }
+  else if (i == Sub) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = SUB; }
+  else if (i == Mul) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = MUL; }
+  else if (i == Div) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = DIV; }
+  else if (i == Mod) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = MOD; }
   else if (i == Sys || i == Fun) {
     b = (int *)n[1];
-    while (b) { gen(b+1); *++e = PSH; b = (int *)*b; }
+    while (b) { gen(b+1); *++e = PUSH; b = (int *)*b; }
     if (i == Fun) *++e = JSR; *++e = n[2];
     if (n[3]) { *++e = ADJ; *++e = n[3]; }
   }
   else if (i == While) {
     *++e = JMP; b = ++e; gen(n+2); *b = (int)(e + 1);
     gen((int *)n[1]);
-    *++e = BNZ; *++e = (int)(b + 1);
+    *++e = JNZ; *++e = (int)(b + 1);
   }
-  else if (i == Return) { if (n[1]) gen((int *)n[1]); *++e = LEV; }
+  else if (i == Return) { if (n[1]) gen((int *)n[1]); *++e = LEAVE; }
   else if (i == '{') { gen((int *)n[1]); gen(n+2); }
-  else if (i == Enter) { *++e = ENT; *++e = n[1]; gen(n+2); *++e = LEV; }
+  else if (i == Enter) { *++e = ENTER; *++e = n[1]; gen(n+2); *++e = LEAVE; }
   else if (i != ';') { printf("%d: compiler error gen=%d\n", line, i); exit(-1); }
 }
 
@@ -402,6 +401,10 @@ int main(int argc, char **argv)
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
+
+  ops = "LEA     IMM     JMP     JSR     JZ      JNZ     ENTER   ADJUST  LEAVE   LDI     LDB     STI     STB     PUSH    "
+        "OR      XOR     AND     EQ      NE      LT      GT      LE      GE      SHL     SHR     ADD     SUB     MUL     DIV     MOD     "
+        "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCMP  MEMCPY  MMAP    DLSYM   QSORT   EXIT    ";
 
   p = "char else enum if int return sizeof while "
       "open read close printf malloc memset memcmp memcpy mmap dlsym qsort exit void main";
@@ -514,12 +517,13 @@ int main(int argc, char **argv)
   if (!(pc = (int *)idmain[Val])) { printf("main() not defined\n"); return -1; }
   if (src) return 0;
 
+  // call exit if main returns
+  *++e = PUSH; t = e;
+  *++e = EXIT;
   // setup stack
   sp = (int *)((int)sp + poolsz);
-  *--sp = EXIT; // call exit if main returns
-  *--sp = PSH; t = sp;
-  *--sp = (int)argv;
   *--sp = argc;
+  *--sp = (int)argv;
   *--sp = (int)t;
 
   // run...
@@ -527,26 +531,23 @@ int main(int argc, char **argv)
   while (1) {
     i = *pc++; ++cycle;
     if (debug) {
-      printf("%d> %.4s", cycle,
-        &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
-         "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT,"[i * 5]);
+      printf("%d> %.8s", cycle, &ops[i * 8]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
     }
-    if      (i == LEA) a = (int)(bp + *pc++);                             // load local address
-    else if (i == IMM) a = *pc++;                                         // load global address or immediate
-    else if (i == JMP) pc = (int *)*pc;                                   // jump
-    else if (i == JSR) { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
-    else if (i == BZ)  pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
-    else if (i == BNZ) pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
-    else if (i == ENT) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }     // enter subroutine
-    else if (i == ADJ) sp = sp + *pc++;                                   // stack adjust
-    else if (i == LEV) { sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; } // leave subroutine
-    else if (i == LI)  a = *(int *)a;                                     // load int
-    else if (i == LC)  a = *(char *)a;                                    // load char
-    else if (i == SI)  *(int *)*sp++ = a;                                 // store int
-    else if (i == SC)  a = *(char *)*sp++ = a;                            // store char
-    else if (i == PSH) *--sp = a;                                         // push
+    if      (i == LEA)   a = (int)(bp + *pc++);                             // load local address
+    else if (i == IMM)   a = *pc++;                                         // load global address or immediate
+    else if (i == JMP)   pc = (int *)*pc;                                   // jump
+    else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
+    else if (i == JZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
+    else if (i == JNZ)   pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
+    else if (i == ENTER) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }     // enter subroutine
+    else if (i == ADJ)   sp = sp + *pc++;                                   // stack adjust
+    else if (i == LEAVE) { sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; } // leave subroutine
+    else if (i == LDI)   a = *(int *)a;                                     // load int
+    else if (i == LDB)   a = *(char *)a;                                    // load byte
+    else if (i == STI)   *(int *)*sp++ = a;                                 // store int
+    else if (i == STB)   a = *(char *)*sp++ = a;                            // store byte
+    else if (i == PUSH)  *--sp = a;                                         // push
 
     else if (i == OR)  a = *sp++ |  a;
     else if (i == XOR) a = *sp++ ^  a;
@@ -565,18 +566,19 @@ int main(int argc, char **argv)
     else if (i == DIV) a = *sp++ /  a;
     else if (i == MOD) a = *sp++ %  a;
 
-    else if (i == OPEN) a = open((char *)*sp, sp[1]);
-    else if (i == READ) a = read(*sp, (char *)sp[1], sp[2]);
-    else if (i == CLOS) a = close(*sp);
-    else if (i == PRTF) a = printf((char *)*sp, sp[1], sp[2], sp[3], sp[4], sp[5]);
-    else if (i == MALC) a = (int)malloc(*sp);
-    else if (i == MSET) a = (int)memset((char *)*sp, sp[1], sp[2]);
-    else if (i == MCMP) a = memcmp((char *)*sp, (char *)sp[1], sp[2]);
-    else if (i == MCPY) a = (int)memcpy((char *)*sp, (char *)sp[1], sp[2]);
-    else if (i == MMAP) a = (int)mmap((char *)*sp, sp[1], sp[2], sp[3], sp[4], sp[5]);
-    else if (i == DSYM) a = (int)dlsym((char *)*sp, (char *)sp[1]);
-    else if (i == QSRT) qsort((char *)sp, sp[1], sp[2], (void *)sp[3]);
-    else if (i == EXIT) { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
+    else if (i == OPEN)   a = open((char *)*sp, sp[1]);
+    else if (i == READ)   a = read(*sp, (char *)sp[1], sp[2]);
+    else if (i == WRITE)  a = write(*sp, (char *)sp[1], sp[2]);
+    else if (i == CLOSE)  a = close(*sp);
+    else if (i == PRINTF) a = printf((char *)*sp, sp[1], sp[2], sp[3], sp[4], sp[5]);
+    else if (i == MALLOC) a = (int)malloc(*sp);
+    else if (i == MEMSET) a = (int)memset((char *)*sp, sp[1], sp[2]);
+    else if (i == MEMCMP) a = memcmp((char *)*sp, (char *)sp[1], sp[2]);
+    else if (i == MEMCPY) a = (int)memcpy((char *)*sp, (char *)sp[1], sp[2]);
+    else if (i == MMAP)   a = (int)mmap((char *)*sp, sp[1], sp[2], sp[3], sp[4], sp[5]);
+    else if (i == DLSYM)  a = (int)dlsym((char *)*sp, (char *)sp[1]);
+    else if (i == QSORT)  qsort((char *)sp, sp[1], sp[2], (void *)sp[3]);
+    else if (i == EXIT)   { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1; }
   }
 }
