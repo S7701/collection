@@ -21,7 +21,7 @@ char *p, *lp, // current position in source code
      *jitmem, // executable memory for JIT-compiled native code
      *je,     // current position in emitted native code
      *data,   // data/bss pointer
-     **linemap; // maps a line number into its source position
+     *opcodes;
 
 int *e, *le, *text, // current position in emitted code
     *id,      // currently parsed identifier
@@ -43,9 +43,9 @@ enum Token {
 
 // opcodes
 enum Opcode {
-  LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
-  OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-  OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT
+  LEA, IMM, JMP, JSR, JZ, JNZ, ENTER, ADJUST, LEAVE, LDI, LDB, STI, STB, PUSH,
+  OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
+  OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCMP, MEMCPY, MMAP, EXIT
 };
 
 // types
@@ -61,9 +61,14 @@ void next()
   while (tk = *p) {
     ++p;
     if (tk == '\n') {
-      //linemap[line] = lp; 
-      lp = p;
-      //while (le < e) { srcmap[le - text] = line; le++; };
+      if (src) {
+        printf("%d: %.*s", line, p - lp, lp);
+        lp = p;
+        while (le < e) {
+          printf("%.8s", &opcodes[*++le * 8]);
+          if (*le <= ADJUST) printf(" %d\n", *++le); else printf("\n");
+        }
+      }
       ++line;
     }
     else if (tk == '#') {
@@ -157,12 +162,12 @@ void expr(int lev)
     if (tk == '(') {
       next();
       t = 0;
-      while (tk != ')') { expr(Assign); *++e = PSH; ++t; if (tk == ',') next(); }
+      while (tk != ')') { expr(Assign); *++e = PUSH; ++t; if (tk == ',') next(); }
       next();
       if (d[Class] == Sys) *++e = d[Val];
       else if (d[Class] == Fun) { *++e = JSR; *++e = d[Val]; }
       else { printf("%d: bad function call\n", line); exit(-1); }
-      if (t) { *++e = ADJ; *++e = t; }
+      if (t) { *++e = ADJUST; *++e = t; }
       ty = d[Type];
     }
     else if (d[Class] == Num) { *++e = IMM; *++e = d[Val]; ty = INT; }
@@ -170,7 +175,7 @@ void expr(int lev)
       if (d[Class] == Loc) { *++e = LEA; *++e = loc - d[Val]; }
       else if (d[Class] == Glo) { *++e = IMM; *++e = d[Val]; }
       else { printf("%d: undefined variable\n", line); exit(-1); }
-      *++e = ((ty = d[Type]) == CHAR) ? LC : LI;
+      *++e = ((ty = d[Type]) == CHAR) ? LDB : LDI;
     }
   }
   else if (tk == '(') {
@@ -190,30 +195,30 @@ void expr(int lev)
   else if (tk == Mul) {
     next(); expr(Inc);
     if (ty > INT) ty = ty - PTR; else { printf("%d: bad dereference\n", line); exit(-1); }
-    *++e = (ty == CHAR) ? LC : LI;
+    *++e = (ty == CHAR) ? LDB : LDI;
   }
   else if (tk == And) {
     next(); expr(Inc);
-    if (*e == LC || *e == LI) --e; else { printf("%d: bad address-of\n", line); exit(-1); }
+    if (*e == LDB || *e == LDI) --e; else { printf("%d: bad address-of\n", line); exit(-1); }
     ty = ty + PTR;
   }
-  else if (tk == '!') { next(); expr(Inc); *++e = PSH; *++e = IMM; *++e = 0; *++e = EQ; ty = INT; }
-  else if (tk == '~') { next(); expr(Inc); *++e = PSH; *++e = IMM; *++e = -1; *++e = XOR; ty = INT; }
+  else if (tk == '!') { next(); expr(Inc); *++e = PUSH; *++e = IMM; *++e = 0; *++e = EQ; ty = INT; }
+  else if (tk == '~') { next(); expr(Inc); *++e = PUSH; *++e = IMM; *++e = -1; *++e = XOR; ty = INT; }
   else if (tk == Add) { next(); expr(Inc); ty = INT; }
   else if (tk == Sub) {
     next(); *++e = IMM;
-    if (tk == Num) { *++e = -ival; next(); } else { *++e = -1; *++e = PSH; expr(Inc); *++e = MUL; }
+    if (tk == Num) { *++e = -ival; next(); } else { *++e = -1; *++e = PUSH; expr(Inc); *++e = MUL; }
     ty = INT;
   }
   else if (tk == Inc || tk == Dec) {
     t = tk; next(); expr(Inc);
-    if (*e == LC) { *e = PSH; *++e = LC; }
-    else if (*e == LI) { *e = PSH; *++e = LI; }
+    if (*e == LDB) { *e = PUSH; *++e = LDB; }
+    else if (*e == LDI) { *e = PUSH; *++e = LDI; }
     else { printf("%d: bad lvalue in pre-increment\n", line); exit(-1); }
-    *++e = PSH;
+    *++e = PUSH;
     *++e = IMM; *++e = (ty > PTR) ? sizeof(int) : sizeof(char);
     *++e = (t == Inc) ? ADD : SUB;
-    *++e = (ty == CHAR) ? SC : SI;
+    *++e = (ty == CHAR) ? STB : STI;
   }
   else { printf("%d: bad expression\n", line); exit(-1); }
 
@@ -221,62 +226,62 @@ void expr(int lev)
     t = ty;
     if (tk == Assign) {
       next();
-      if (*e == LC || *e == LI) *e = PSH; else { printf("%d: bad lvalue in assignment\n", line); exit(-1); }
-      expr(Assign); *++e = ((ty = t) == CHAR) ? SC : SI;
+      if (*e == LDB || *e == LDI) *e = PUSH; else { printf("%d: bad lvalue in assignment\n", line); exit(-1); }
+      expr(Assign); *++e = ((ty = t) == CHAR) ? STB : STI;
     }
     else if (tk == Cond) {
       next();
-      *++e = BZ; d = ++e;
+      *++e = JZ; d = ++e;
       expr(Assign);
       if (tk == ':') next(); else { printf("%d: conditional missing colon\n", line); exit(-1); }
       *d = (int)(e + 3); *++e = JMP; d = ++e;
       expr(Cond);
       *d = (int)(e + 1);
     }
-    else if (tk == Lor) { next(); *++e = BNZ; d = ++e; expr(Lan); *d = (int)(e + 1); ty = INT; }
-    else if (tk == Lan) { next(); *++e = BZ;  d = ++e; expr(Or);  *d = (int)(e + 1); ty = INT; }
-    else if (tk == Or)  { next(); *++e = PSH; expr(Xor); *++e = OR;  ty = INT; }
-    else if (tk == Xor) { next(); *++e = PSH; expr(And); *++e = XOR; ty = INT; }
-    else if (tk == And) { next(); *++e = PSH; expr(Eq);  *++e = AND; ty = INT; }
-    else if (tk == Eq)  { next(); *++e = PSH; expr(Lt);  *++e = EQ;  ty = INT; }
-    else if (tk == Ne)  { next(); *++e = PSH; expr(Lt);  *++e = NE;  ty = INT; }
-    else if (tk == Lt)  { next(); *++e = PSH; expr(Shl); *++e = LT;  ty = INT; }
-    else if (tk == Gt)  { next(); *++e = PSH; expr(Shl); *++e = GT;  ty = INT; }
-    else if (tk == Le)  { next(); *++e = PSH; expr(Shl); *++e = LE;  ty = INT; }
-    else if (tk == Ge)  { next(); *++e = PSH; expr(Shl); *++e = GE;  ty = INT; }
-    else if (tk == Shl) { next(); *++e = PSH; expr(Add); *++e = SHL; ty = INT; }
-    else if (tk == Shr) { next(); *++e = PSH; expr(Add); *++e = SHR; ty = INT; }
+    else if (tk == Lor) { next(); *++e = JNZ; d = ++e; expr(Lan); *d = (int)(e + 1); ty = INT; }
+    else if (tk == Lan) { next(); *++e = JZ;  d = ++e; expr(Or);  *d = (int)(e + 1); ty = INT; }
+    else if (tk == Or)  { next(); *++e = PUSH; expr(Xor); *++e = OR;  ty = INT; }
+    else if (tk == Xor) { next(); *++e = PUSH; expr(And); *++e = XOR; ty = INT; }
+    else if (tk == And) { next(); *++e = PUSH; expr(Eq);  *++e = AND; ty = INT; }
+    else if (tk == Eq)  { next(); *++e = PUSH; expr(Lt);  *++e = EQ;  ty = INT; }
+    else if (tk == Ne)  { next(); *++e = PUSH; expr(Lt);  *++e = NE;  ty = INT; }
+    else if (tk == Lt)  { next(); *++e = PUSH; expr(Shl); *++e = LT;  ty = INT; }
+    else if (tk == Gt)  { next(); *++e = PUSH; expr(Shl); *++e = GT;  ty = INT; }
+    else if (tk == Le)  { next(); *++e = PUSH; expr(Shl); *++e = LE;  ty = INT; }
+    else if (tk == Ge)  { next(); *++e = PUSH; expr(Shl); *++e = GE;  ty = INT; }
+    else if (tk == Shl) { next(); *++e = PUSH; expr(Add); *++e = SHL; ty = INT; }
+    else if (tk == Shr) { next(); *++e = PUSH; expr(Add); *++e = SHR; ty = INT; }
     else if (tk == Add) {
-      next(); *++e = PSH; expr(Mul);
-      if ((ty = t) > PTR) { *++e = PSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
+      next(); *++e = PUSH; expr(Mul);
+      if ((ty = t) > PTR) { *++e = PUSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
       *++e = ADD;
     }
     else if (tk == Sub) {
-      next(); *++e = PSH; expr(Mul);
-      if ((ty = t) > PTR) { *++e = PSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
+      next(); *++e = PUSH; expr(Mul);
+      if ((ty = t) > PTR) { *++e = PUSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
       *++e = SUB;
     }
-    else if (tk == Mul) { next(); *++e = PSH; expr(Inc); *++e = MUL; ty = INT; }
-    else if (tk == Div) { next(); *++e = PSH; expr(Inc); *++e = DIV; ty = INT; }
-    else if (tk == Mod) { next(); *++e = PSH; expr(Inc); *++e = MOD; ty = INT; }
+    else if (tk == Mul) { next(); *++e = PUSH; expr(Inc); *++e = MUL; ty = INT; }
+    else if (tk == Div) { next(); *++e = PUSH; expr(Inc); *++e = DIV; ty = INT; }
+    else if (tk == Mod) { next(); *++e = PUSH; expr(Inc); *++e = MOD; ty = INT; }
     else if (tk == Inc || tk == Dec) {
-      if (*e == LC) { *e = PSH; *++e = LC; }
-      else if (*e == LI) { *e = PSH; *++e = LI; }
+      if (*e == LDB) { *e = PUSH; *++e = LDB; }
+      else if (*e == LDI) { *e = PUSH; *++e = LDI; }
       else { printf("%d: bad lvalue in post-increment\n", line); exit(-1); }
-      *++e = PSH; *++e = IMM; *++e = (ty > PTR) ? sizeof(int) : sizeof(char);
+      *++e = PUSH; *++e = IMM; *++e = (ty > PTR) ? sizeof(int) : sizeof(char);
       *++e = (tk == Inc) ? ADD : SUB;
-      *++e = (ty == CHAR) ? SC : SI;
-      *++e = PSH; *++e = IMM; *++e = (ty > PTR) ? sizeof(int) : sizeof(char);
+      *++e = (ty == CHAR) ? STB : STI;
+      *++e = PUSH; *++e = IMM; *++e = (ty > PTR) ? sizeof(int) : sizeof(char);
       *++e = (tk == Inc) ? SUB : ADD;
       next();
     }
     else if (tk == Brak) {
-      next(); *++e = PSH; expr(Assign);
+      next(); *++e = PUSH; expr(Assign);
       if (tk == ']') next(); else { printf("%d: close bracket expected\n", line); exit(-1); }
-      if (t > PTR) { *++e = PSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
+      if (t > PTR) { *++e = PUSH; *++e = IMM; *++e = sizeof(int); *++e = MUL;  }
       else if (t < PTR) { printf("%d: pointer type expected\n", line); exit(-1); }
       *++e = ADD;
-      *++e = ((ty = t - PTR) == CHAR) ? LC : LI;
+      *++e = ((ty = t - PTR) == CHAR) ? LDB : LDI;
     }
     else { printf("%d: compiler error tk=%d\n", line, tk); exit(-1); }
   }
@@ -291,7 +296,7 @@ void stmt()
     if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
     expr(Assign);
     if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
-    *++e = BZ; b = ++e;
+    *++e = JZ; b = ++e;
     stmt();
     if (tk == Else) {
       *b = (int)(e + 3); *++e = JMP; b = ++e;
@@ -306,7 +311,7 @@ void stmt()
     if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
     expr(Assign);
     if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
-    *++e = BZ; b = ++e;
+    *++e = JZ; b = ++e;
     stmt();
     *++e = JMP; *++e = (int)a;
     *b = (int)(e + 1);
@@ -314,7 +319,7 @@ void stmt()
   else if (tk == Return) {
     next();
     if (tk != ';') expr(Assign);
-    *++e = LEV;
+    *++e = LEAVE;
     if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
   }
   else if (tk == '{') {
@@ -352,9 +357,15 @@ int main(int argc, char **argv)
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
-  
+
+  opcodes = "LEA     IMM     JMP     JSR     JZ      JNZ     ENTER   ADJUST  LEAVE   LDI     LDB     STI     STB     PUSH    "
+            "OR      XOR     AND     EQ      NE      LT      GT      LE      GE      SHL     SHR     ADD     SUB     MUL     DIV     MOD     "
+            "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCMP  MEMCPY  MMAP    EXIT    ";
+
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp memcpy mmap dlsym qsort exit void main";
+      "open read write close printf malloc free memset memcmp memcpy mmap dlsym qsort exit "
+      "void "
+      "main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
@@ -440,9 +451,9 @@ int main(int argc, char **argv)
           }
           next();
         }
-        *++e = ENT; *++e = i - loc;
+        *++e = ENTER; *++e = i - loc;
         while (tk != '}') stmt();
-        *++e = LEV;
+        *++e = LEAVE;
         id = sym; // unwind symbol table locals
         while (id[Tk]) {
           if (id[Class] == Loc) {
@@ -473,36 +484,30 @@ int main(int argc, char **argv)
   while (pc <= e) {
     i = *pc;
     if (src) {
-//        while (line < srcmap[pc - text]) {
-//            line++; printf("% 4d | %.*s", line, linemap[line + 1] - linemap[line], linemap[line]);
-//        }
-        printf("0x%05x (%p):\t%8.4s", pc - text, je,
-                        &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
-                         "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT,"[i * 5]);
-        if (i <= ADJ) printf(" 0x%x\n", *(pc + 1)); else printf("\n");
+      printf("0x%05x (%p):\t%.8s", pc - text, je, &opcodes[i * 8]);
+      if (i <= ADJUST) printf(" %d\n", *pc); else printf("\n");
     }
-    *pc++ = ((int)je << 8) | i; // for later relocation of JMP/JSR/BZ/BNZ
+    *pc++ = ((int)je << 8) | i; // for later relocation of JMP/JSR/JZ/JNZ
     if (i == LEA) {
       i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: LEA out of bounds\n"); return -1; }
       *(int*)je = 0x458d; je = je + 2; *je++ = i;  // leal $(4 * n)(%ebp), %eax
     }
-    else if (i == ENT) {
-      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: ENT out of bounds\n"); return -1; }
+    else if (i == ENTER) {
+      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: ENTER out of bounds\n"); return -1; }
       *(int *)je = 0xe58955; je = je + 3;  // push %ebp; movl %esp, %ebp
       if (i > 0) { *(int *)je = 0xec83; je = je + 2; *je++ = i; } // subl $(i*4), %esp
     }
-    else if (i == IMM) { *je++ = 0xb8; *(int *)je = *pc++; je = je + 4; } // movl $imm, %eax
-    else if (i == ADJ) { i = 4 * *pc++; *(int *)je = 0xc483; je = je + 2; *je++ = i; } // addl $(n * 4), %esp
-    else if (i == PSH)   *je++ = 0x50;                    // push %eax
-    else if (i == LEV) { *(int *)je = 0xc35dec89; je = je + 4; } // mov %ebp, %esp; pop %ebp; ret
-    else if (i == LI)  { *(int *)je = 0x008b;     je = je + 2; } // movl (%eax), %eax
-    else if (i == LC)  { *(int *)je = 0x00be0f;   je = je + 3; } // movsbl (%eax), %eax
-    else if (i == SI)  { *(int *)je = 0x018959;   je = je + 3; } // pop %ecx; movl %eax, (%ecx)
-    else if (i == SC)  { *(int *)je = 0x018859;   je = je + 3; } // pop %ecx; movb %al, (%ecx)
-    else if (i == OR)  { *(int *)je = 0xc80959;   je = je + 3; } // pop %ecx; orl %ecx, %eax
-    else if (i == XOR) { *(int *)je = 0xc83159;   je = je + 3; } // pop %ecx; xorl %ecx, %eax
-    else if (i == AND) { *(int *)je = 0xc82159;   je = je + 3; } // pop %ecx; andl %ecx, %eax
+    else if (i == IMM)    { *je++ = 0xb8; *(int *)je = *pc++; je = je + 4; } // movl $imm, %eax
+    else if (i == ADJUST) { i = 4 * *pc++; *(int *)je = 0xc483; je = je + 2; *je++ = i; } // addl $(n * 4), %esp
+    else if (i == PUSH)   *je++ = 0x50;                    // push %eax
+    else if (i == LEAVE)  { *(int *)je = 0xc35dec89; je = je + 4; } // mov %ebp, %esp; pop %ebp; ret
+    else if (i == LDI)    { *(int *)je = 0x008b;     je = je + 2; } // movl (%eax), %eax
+    else if (i == LDB)    { *(int *)je = 0x00be0f;   je = je + 3; } // movsbl (%eax), %eax
+    else if (i == STI)    { *(int *)je = 0x018959;   je = je + 3; } // pop %ecx; movl %eax, (%ecx)
+    else if (i == STB)    { *(int *)je = 0x018859;   je = je + 3; } // pop %ecx; movb %al, (%ecx)
+    else if (i == OR)     { *(int *)je = 0xc80959;   je = je + 3; } // pop %ecx; orl %ecx, %eax
+    else if (i == XOR)    { *(int *)je = 0xc83159;   je = je + 3; } // pop %ecx; xorl %ecx, %eax
+    else if (i == AND)    { *(int *)je = 0xc82159;   je = je + 3; } // pop %ecx; andl %ecx, %eax
     else if (EQ <= i && i <= GE) {
         *(int*)je=0xb8c13959; je=je+4; *(int*)je=0; je=je+4;           // pop %ecx; cmp %ecx, %eax; mov $0, %eax
         if      (i == EQ)  { *(int*)je = 0xc0940f; } // sete %al
@@ -511,7 +516,7 @@ int main(int argc, char **argv)
         else if (i == GT)  { *(int*)je = 0xc09f0f; } // setg %al
         else if (i == LE)  { *(int*)je = 0xc09e0f; } // setle %al
         else               { *(int*)je = 0xc09d0f; } // setge %al
-        je = je+3;
+        je = je + 3;
     }
     else if (i == SHL) { *(int*)je = 0xe0d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; shl %cl, %eax
     else if (i == SHR) { *(int*)je = 0xf8d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; sar %cl, %eax
@@ -522,16 +527,16 @@ int main(int argc, char **argv)
     else if (i == MOD) { *(int*)je = 0xf7999159; je = je + 4; *(int *)je = 0x92f9; je = je + 2; } // pop %ecx; xchg %eax, %ecx; cltd; idiv %ecx, %eax; xchg %edx, %eax
     else if (i == JMP) { ++pc; *je       = 0xe9;     je = je + 5; } // jmp <off32>
     else if (i == JSR) { ++pc; *je       = 0xe8;     je = je + 5; } // call <off32>
-    else if (i == BZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
-    else if (i == BNZ) { ++pc; *(int*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
-    else if (i >= OPEN) {
-      if      (i == OPEN) tmp = (int)dlsym(0, "open");   else if (i == READ) tmp = (int)dlsym(0, "read");
-      else if (i == CLOS) tmp = (int)dlsym(0, "close");  else if (i == PRTF) tmp = (int)dlsym(0, "printf");
-      else if (i == MALC) tmp = (int)dlsym(0, "malloc"); else if (i == MSET) tmp = (int)dlsym(0, "memset");
-      else if (i == MCMP) tmp = (int)dlsym(0, "memcmp"); else if (i == MCPY) tmp = (int)dlsym(0, "memcpy");
-      else if (i == MMAP) tmp = (int)dlsym(0, "mmap");   else if (i == DSYM) tmp = (int)dlsym(0, "dlsym");
-      else if (i == QSRT) tmp = (int)dlsym(0, "qsort");  else if (i == EXIT) tmp = (int)dlsym(0, "exit");
-      if (*pc++ == ADJ) { i = *pc++; } else { printf("no ADJ after native proc!\n"); exit(2); }
+    else if (i == JZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
+    else if (i == JNZ) { ++pc; *(int*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
+    else if (i >= OPEN && i <= EXIT) {
+      if      (i == OPEN)   tmp = (int)dlsym(0, "open");   else if (i == READ)   tmp = (int)dlsym(0, "read");
+      else if (i == WRITE)  tmp = (int)dlsym(0, "write");  else if (i == CLOSE)  tmp = (int)dlsym(0, "close");
+      else if (i == PRINTF) tmp = (int)dlsym(0, "printf"); else if (i == MALLOC) tmp = (int)dlsym(0, "malloc");
+      else if (i == FREE)   tmp = (int)dlsym(0, "free");   else if (i == MEMSET) tmp = (int)dlsym(0, "memset");
+      else if (i == MEMCMP) tmp = (int)dlsym(0, "memcmp"); else if (i == MEMCPY) tmp = (int)dlsym(0, "memcpy");
+      else if (i == MMAP)   tmp = (int)dlsym(0, "mmap");   else if (i == EXIT)   tmp = (int)dlsym(0, "exit");
+      if (*pc++ == ADJUST) { i = *pc++; } else { printf("no ADJUST after native proc!\n"); exit(2); }
       *je++ = 0xb9; *(int*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;
       *(int*)je = 0xce29e689; je = je + 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
       *(int*)je = 0x8302e9c1; je = je + 4; // shr $2, %ecx; and                -- alignment of %esp for OS X
@@ -539,9 +544,9 @@ int main(int argc, char **argv)
       *(int*)je = 0xe2fc8e54; je = je + 4; // ..%edx, -4(%esi,%ecx,4); loop..  -- reversing args order
       *(int*)je = 0xe8f487f9; je = je + 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
       *(int*)je = tmp - (int)(je + 4); je = je + 4; // <*tmp offset>;
-      *(int*)je = 0xf487; je = je + 2;     // xchg %esi, %esp  -- ADJ, back to old stack without arguments
+      *(int*)je = 0xf487; je = je + 2;     // xchg %esi, %esp  -- ADJUST, back to old stack without arguments
     }
-    else { printf("code generation failed for %d!\n", i); return -1; }
+    else { printf("code generation failed for instruction %d!\n", i); return -1; }
   }
   tje = je;
   
@@ -550,12 +555,12 @@ int main(int argc, char **argv)
   while (pc <= e) {
     i = *pc & 0xff;
     je = (char*)(((*pc++ >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000)); // MSB is restored from jitmem
-    if (i == JSR || i == JMP || i == BZ || i == BNZ) {
+    if (i == JSR || i == JMP || i == JZ || i == JNZ) {
         tmp = ((*(int *)(*pc++) >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000); // extract address
         if      (i == JSR || i == JMP) { je = je + 1; *(int*)je = tmp - (int)(je + 4); }
-        else if (i == BZ  || i == BNZ) { je = je + 4; *(int*)je = tmp - (int)(je + 4); }
+        else if (i == JZ  || i == JNZ) { je = je + 4; *(int*)je = tmp - (int)(je + 4); }
     }
-    else if (i < LEV) { ++pc; }
+    else if (i < LEAVE) { ++pc; }
   }
 
   if (!src) {
