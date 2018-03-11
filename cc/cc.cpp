@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { Auto, Char, Int, Float, Struct };
+enum Token {
+  Num, Id,
+  Auto, Char, Enum, Float, Int, Struct
+};
 
 struct member;
 
@@ -20,7 +23,56 @@ struct member {
   int ptr;
 };
 
+int token;
+
 struct type* types;
+
+int decl()
+{
+  Type* type;
+  int ptr;
+  switch (token)
+  {
+  case Char:
+    break;
+  case Int:
+    break;
+  case Enum:
+    next();
+    bool named = false;
+    if (token == Id) { next(); named = true; }
+    if (token == '{')
+    {
+      next();
+      int i = 0;
+      while (token !='}')
+      {
+        if (token != Id) { printf("%d: bad enum identifier\n", line); exit(-1); }
+        next();
+        if (token == '=')
+        {
+          next();
+          if (token != Num) { printf("%d: bad enum initializer\n", line); exit(-1); }
+          i = ival;
+          next();
+        }
+      }
+    }
+    else if (token !=';') { printf("%d: ';' expected\n", line); exit(-1); }
+    break;
+  case Struct:
+    break;
+  case Id: // Identifier
+    type = GetType(tokenstr);
+    break;
+  default:
+    return 0;
+  }
+  while (token == '*') {
+    next();
+    ++ptr;
+  }
+}
 
 int module()
 {
