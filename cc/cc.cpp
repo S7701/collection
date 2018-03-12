@@ -2,9 +2,19 @@
 #include <string.h>
 
 enum Token {
-  Num, Id,
-  Auto, Char, Enum, Float, Int, Struct
+  Num, Local, Global, Func, Id,
+  Auto, Char, Double, Enum, Float, Int, Long, Struct
 };
+
+struct Identifier {
+  Identifier* next;
+  Token token; // Auto, Num, Local, Global, Func, Char, Int, Long, Float, Double, Enum, Struct
+  int ptr; // level of indirection
+  Identifier* type; // 0 for Auto, Char, Int, Float, Enum, Struct
+  int ival; // Auto: ?; Num: value; Local, Global, Func: offset; Char, Int, Long, Float, Double, Enum, Struct: size in bytes
+};
+
+Identifier* identifiers;
 
 struct member;
 
