@@ -23,15 +23,21 @@ struct member {
   int ptr;
 };
 
-int token;
+int tok;
+int tokival;
+char* tokstr;
 
 struct type* types;
 
+type* gettype(char* name);
+
+void next();
+
 int decl()
 {
-  Type* type;
+  struct type* type;
   int ptr;
-  switch (token)
+  switch (tok)
   {
   case Char:
     break;
@@ -40,38 +46,41 @@ int decl()
   case Enum:
     next();
     bool named = false;
-    if (token == Id) { next(); named = true; }
-    if (token == '{')
+    if (tok == Id) { next(); named = true; }
+    if (tok == '{')
     {
       next();
       int i = 0;
-      while (token !='}')
+      while (tok !='}')
       {
-        if (token != Id) { printf("%d: bad enum identifier\n", line); exit(-1); }
+        if (tok != Id) { printf("%d: bad enum identifier\n", line); exit(-1); }
         next();
-        if (token == '=')
+        if (tok == '=')
         {
           next();
-          if (token != Num) { printf("%d: bad enum initializer\n", line); exit(-1); }
-          i = ival;
+          if (tok != Num) { printf("%d: bad enum initializer\n", line); exit(-1); }
+          i = tokival;
           next();
         }
+        ++i;
       }
     }
-    else if (token !=';') { printf("%d: ';' expected\n", line); exit(-1); }
+    else if (!named && tok ==';') { printf("%d: bad forward declaration of enum without name\n", line); exit(-1); }
     break;
   case Struct:
     break;
   case Id: // Identifier
-    type = GetType(tokenstr);
+    type = gettype(tokstr);
+    if (type == 0) return 0;
     break;
   default:
     return 0;
   }
-  while (token == '*') {
+  while (tok == '*') {
     next();
     ++ptr;
   }
+  return 1;
 }
 
 int module()
