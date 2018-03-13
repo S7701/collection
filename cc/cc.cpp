@@ -7,11 +7,11 @@ enum Token {
 };
 
 struct Identifier {
-  Identifier* next;
+  Identifier* next; // next in list
   Token token; // Auto, Num, Local, Global, Func, Char, Int, Long, Float, Double, Enum, Struct
   int ptr; // level of indirection
-  Identifier* type; // 0 for Auto, Char, Int, Float, Enum, Struct
-  int ival; // Auto: ?; Num: value; Local, Global, Func: offset; Char, Int, Long, Float, Double, Enum, Struct: size in bytes
+  Identifier* typeormembers; // Auto, Char, Int, Long, Float, Double, Enum: 0; Num, Local, Global, Func: type; Struct: member list
+  int value; // Auto: ?; Num: value; Local, Global, Func: offset; Char, Int, Long, Float, Double, Enum, Struct: size in bytes
 };
 
 Identifier* identifiers;
