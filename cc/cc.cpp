@@ -3,35 +3,24 @@
 
 enum Token {
   Num, Local, Global, Func, Id,
-  Auto, Char, Double, Enum, Float, Int, Long, Struct
+  Auto, Char, Enum, Int, Struct
+};
+
+const char* tokens[] = {
+  "Num", "Local", "Global", "Func", "Id",
+  "Auto", "Char", "Enum", "Int", "Struct"
 };
 
 struct Identifier {
   Identifier* next; // next in list
-  Token token; // Auto, Num, Local, Global, Func, Char, Int, Long, Float, Double, Enum, Struct
+  const char* str; // name of identifier; may be 0 for unnamed enum or struct
+  Token tok; // Auto, Num, Local, Global, Func, Char, Int, Enum, Struct
   int ptr; // level of indirection
-  Identifier* typeormembers; // Auto, Char, Int, Long, Float, Double, Enum: 0; Num, Local, Global, Func: type; Struct: member list
-  int value; // Auto: ?; Num: value; Local, Global, Func: offset; Char, Int, Long, Float, Double, Enum, Struct: size in bytes
+  Identifier* ref; // Num, Local, Global, Func: type; Enum, Struct: member list
+  int val; // Num: value; Local, Global, Func: offset; Char, Int, Enum, Struct: size in bytes
 };
 
 Identifier* identifiers;
-
-struct member;
-
-struct type {
-  struct type* next;
-  char* name;
-  int basetype;            // Auto, Char, Int or Struct
-  int size;                // size in bytes
-  struct members* members; // only if basetype == Struct
-};
-
-struct member {
-  struct members* next;
-  char* name;
-  struct type* type;
-  int ptr;
-};
 
 int tok;
 int tokival;
@@ -39,14 +28,17 @@ char* tokstr;
 
 struct type* types;
 
-type* gettype(char* name);
+Identifier* getIdentifier(char* str);
 
 void next();
 
 int decl()
 {
-  struct type* type;
-  int ptr;
+  bool named = false;
+  int i = 0;
+  Identifier* id = 0;
+  int ptr = 0;
+  int l;
   switch (tok)
   {
   case Char:
@@ -54,13 +46,25 @@ int decl()
   case Int:
     break;
   case Enum:
+    l = line;
     next();
-    bool named = false;
-    if (tok == Id) { next(); named = true; }
+    if (tok == Id)
+    {
+      id = getIdentifier(tokstr);
+      next();
+      named = true;
+    }
     if (tok == '{')
     {
       next();
-      int i = 0;
+      if (id)
+      {
+        if (id->tok == Enum)
+        { printf("%d: duplicate enum declaration\n", l); exit(-1); }
+        else
+        { printf("%d: bad enum declaration; name already used %s\n", l, tokens[id->tok]); exit(-1); }
+      }
+      id = newIdentifier(Enum, name);
       while (tok !='}')
       {
         if (tok != Id) { printf("%d: bad enum identifier\n", line); exit(-1); }
@@ -75,7 +79,11 @@ int decl()
         ++i;
       }
     }
-    else if (!named && tok ==';') { printf("%d: bad forward declaration of enum without name\n", line); exit(-1); }
+    else if (tok ==';')
+    {
+      if (!named) {printf("%d: missing name in enum forward declaration\n", line); exit(-1); }
+      return 1;
+    }
     break;
   case Struct:
     break;
