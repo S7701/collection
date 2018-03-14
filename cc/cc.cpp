@@ -2,94 +2,122 @@
 #include <string.h>
 
 enum Token {
-  Num, Local, Global, Func, Id,
+  Num = 128, Local, Global, Func, Id,
   Auto, Char, Enum, Int, Struct
 };
 
 const char* tokens[] = {
-  "Num", "Local", "Global", "Func", "Id",
-  "Auto", "Char", "Enum", "Int", "Struct"
+  "number", "local variable", "global variable", "function", "identifier",
+  "auto", "char", "enum", "int", "struct"
 };
 
 struct Identifier {
   Identifier* next; // next in list
-  const char* str; // name of identifier; may be 0 for unnamed enum or struct
-  Token tok; // Auto, Num, Local, Global, Func, Char, Int, Enum, Struct
-  int ptr; // level of indirection
-  Identifier* ref; // Num, Local, Global, Func: type; Enum, Struct: member list
-  int val; // Num: value; Local, Global, Func: offset; Char, Int, Enum, Struct: size in bytes
+  Token tok;        // Auto, Num, Local, Global, Func, Char, Int, Enum, Struct
+  const char* str;  // name of identifier; may be 0 for unnamed enum or struct
+  int line;         // line number
+  int ptr;          // Local, Global, Func: level of indirection
+  Identifier* ref;  // Num, Local, Global, Func: type; Enum, Struct: member list
+  int val;          // Num: value; Local, Global, Func: offset; Char, Int, Enum, Struct: size in bytes
 };
 
-Identifier* identifiers;
+int tok;         // current token
+Identifier* id;  // currently parsed identifier
+int ival;        // currently parsed integer value
+int line;        // current line number
+Identifier* ids; // global identifier list
 
-int tok;
-int tokival;
-char* tokstr;
-
-struct type* types;
-
-Identifier* getIdentifier(char* str);
+Identifier* newid(Token tok, const char* str, int line);
+Identifier* getid(Identifier* list, const char* str);
 
 void next();
 
-int decl()
+// "char" ('*')* identifier (',' ('*')* identifier)* ';' |
+// "int" ('*')* identifier (',' ('*')* identifier)* ';' |
+// "enum" identifier ';' |
+// "enum" identifier '{' (identifier ('=' number)? (',' identifier ('=' number)?)*)? '}' (('*')* identifier (',' ('*')* identifier)*)? ';' |
+// "enum" '{' (identifier ('=' number)? (',' identifier ('=' number)?)*)? '}' ('*')* identifier (',' ('*')* identifier)* ';' |
+// "struct" identifier ';' |
+// "struct" identifier '{' (type ('*')* identifier ';')* '}' (('*')* identifier (',' ('*')* identifier)*)? ';' |
+// "struct" '{' (type ('*')* identifier ';')* '}' ('*')* identifier (',' ('*')* identifier)* ';' |
+// type ('*')* identifier (',' ('*')* identifier)* ';'
+Identifier* decl()
 {
-  bool named = false;
-  int i = 0;
-  Identifier* id = 0;
-  int ptr = 0;
+  Identifier* type = 0;
+  Identifier* name = 0;
   int l;
+  int i = 0;
+  int ptr = 0;
   switch (tok)
   {
   case Char:
+    type = id;
     break;
   case Int:
+    type = id;
     break;
   case Enum:
-    l = line;
+    l = line; // save enum line number
     next();
-    if (tok == Id)
+    if (tok == Id) // named enum?
     {
-      id = getIdentifier(tokstr);
+      name = id;
       next();
-      named = true;
     }
-    if (tok == '{')
+    if (tok ==';') // enum declaration?
     {
-      next();
-      if (id)
+      if (!name)
+      { printf("%d: bad enum declaration; missing enum name after keyword 'enum'\n", l); exit(-1); }
+      else if (name->tok == Enum)
+      { printf("%d: duplicate enum declaration; enum name '%s' already declared in line %d\n", l, name->str, name->line); exit(-1); }
+      else if (name->tok != Id)
+      { printf("%d: bad enum declaration; enum name '%s' already declared in line %d as %s\n", l, name->str, name->line, tokens[id->tok]); exit(-1); }
+      name->tok = Enum;
+      name->val = sizeof (int);
+      return name;
+    }
+    if (tok == '{') // enum definition?
+    {
+      if (name)
       {
-        if (id->tok == Enum)
-        { printf("%d: duplicate enum declaration\n", l); exit(-1); }
-        else
-        { printf("%d: bad enum declaration; name already used %s\n", l, tokens[id->tok]); exit(-1); }
+        if (name->tok == Enum)
+        { printf("%d: duplicate enum definition; enum name '%s' already declared in line %d\n", l, name->str, name->line); exit(-1); }
+        else if (name->tok != Id)
+        { printf("%d: bad enum definition; enum name '%s' already declared in line %d as %s\n", l, name->str, name->line, tokens[id->tok]); exit(-1); }
       }
-      id = newIdentifier(Enum, name);
+      else
+      {
+        char str[20];
+        sprintf(str, "__unnamed_enum_%04X");
+        name = newid(Id, str, l); name->next = ids; ids = name;
+      }
+      type = newid(Enum, name->name, name->line); type->next = ids; ids = type;
+      type->val = sizeof (int);
+      next();
       while (tok !='}')
       {
-        if (tok != Id) { printf("%d: bad enum identifier\n", line); exit(-1); }
+        if (tok != Id) { printf("%d: bad enum definition; enumerator identifier expected\n", line); exit(-1); }
+        name = id; ids = name->next; name->next = 0; // remove id from global identifier list
         next();
         if (tok == '=')
         {
           next();
-          if (tok != Num) { printf("%d: bad enum initializer\n", line); exit(-1); }
+          if (tok != Num) { printf("%d: bad enumerator initializer; number expected, got %s\n", line, tokens[id->tok]); exit(-1); }
           i = tokival;
           next();
         }
-        ++i;
+        name->tok = Num; name->ref = getid(ids, "int"); name->val = i++;
+        name->next = type->ref; type->ref = name; // add id to member list
       }
     }
-    else if (tok ==';')
-    {
-      if (!named) {printf("%d: missing name in enum forward declaration\n", line); exit(-1); }
-      return 1;
-    }
+    else
+    { printf("%d: enum declaration or definition expected\n", l); exit(-1); }
     break;
   case Struct:
     break;
   case Id: // Identifier
-    type = gettype(tokstr);
-    if (type == 0) return 0;
+    type = id;
+    if (type->tok != Enum && type->tok != Struct) return 0;
     break;
   default:
     return 0;
