@@ -1,16 +1,22 @@
 /* micro lisp (C) A. Carl Douglas */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #define debug(m,e) printf("%s:%d: %s:",__FILE__,__LINE__,m); print_obj(e,1); puts("");
+
 typedef struct List {
-  struct List * next;
+  struct List *next;
   void * data;
 } List;
-List *symbols = 0, *s_quote, *s_if, *s_lambda, *s_apply, *e_true;
+
+static List *symbols = 0, *s_quote, *s_if, *s_lambda, *s_apply, *e_true;
 static int look; /* look ahead character */
+
 #define SYMBOL_MAX  256
+
 static char token[SYMBOL_MAX]; /* token */
 static int is_space(char x)  { return x == ' ' || x == '\t' || x == '\n'; }
 static int is_parens(char x) { return x == '(' || x == ')'; }
@@ -36,7 +42,7 @@ static void gettoken() {
 #define cdr(x)     (((List*)untag(x))->next)
 #define e_false    0
 
-static List * cons(void *_car, void *_cdr) {
+static List *cons(void *_car, void *_cdr) {
   List *_pair = calloc( 1, sizeof (List) );
   _pair->data = _car;
   _pair->next = _cdr;
@@ -51,14 +57,14 @@ static void *intern(char *sym) {
   return car(symbols);
 }
 
-static List * getlist();
+static List *getlist();
 
 static void * getobj() {
   if (token[0] == '(') return getlist();
   return intern(token);
 }
 
-static List * getlist() {
+static List *getlist() {
   List *tmp;
   gettoken();
   if (token[0] == ')') return 0;
@@ -89,9 +95,9 @@ static List *fnull(List *a)    {  return car(a) == 0           ? e_true : e_fals
 static List *freadobj(List *a) {  look = getchar(); gettoken(); return getobj();  }
 static List *fwriteobj(List *a){  print_obj(car(a), 1); puts(""); return e_true;  }
 
-static List * eval(List *exp, List *env);
+static List *eval(List *exp, List *env);
 
-static List * evlist(List *list, List *env) {
+static List *evlist(List *list, List *env) {
   /* http://cslibrary.stanford.edu/105/LinkedListProblems.pdf */
   List *head = 0, **args = &head;
   for ( ; list ; list = cdr(list) ) {
@@ -101,11 +107,11 @@ static List * evlist(List *list, List *env) {
   return head;
 }
 
-static List * apply_primitive(void *primfn, List *args) {
-  return ((List * (*) (List *)) primfn)  ( args );
+static List *apply_primitive(void *primfn, List *args) {
+  return ((List *(*) (List *)) primfn)  ( args );
 }
 
-static List * eval(List *exp, List *env) {
+static List *eval(List *exp, List *env) {
   if (is_atom(exp) ) {
     for ( ; env != 0; env = cdr(env) )
       if (exp == car(car(env)))  return car(cdr(car(env)));
