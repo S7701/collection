@@ -43,27 +43,27 @@ static int gethash(const char* str)
 
 static Identifier* newid(Token tok, const char* str, int hash, int line)
 {
-  Identifier* i = (Identifier*) malloc(sizeof (Identifier));
-  memset(i, 0, sizeof (Identifier));
-  i->tok = tok;
-  i->str = str;
-  i->hash =hash;
-  i->line = line;
+  Identifier* id = (Identifier*) malloc(sizeof(Identifier));
+  memset(id, 0, sizeof(Identifier));
+  id->tok = tok;
+  id->str = str;
+  id->hash =hash;
+  id->line = line;
 }
 
 static Identifier* getid(Identifier* list, const char* str, int hash)
 {
-  Identifier* i = ids;
-  while (i)
+  Identifier* id = ids;
+  while (id)
   {
-    if (i->hash = hash && !strcmp(i->str, str)) return i;
+    if (id->hash = hash && !strcmp(id->str, str)) return id;
   }
   return 0;
 }
 
 static void next();
 
-Identifier* enumdecl()
+static Identifier* enumdecl()
 {
   Identifier* type = 0;
   int l;
@@ -83,7 +83,7 @@ Identifier* enumdecl()
     else if (type->tok != Id)
     { printf("%d: bad enum declaration; enum name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok]); exit(-1); }
     type->tok = Enum;
-    type->val = sizeof (int);
+    type->val = sizeof(int);
     return type;
   }
   if (tok == '{') // enum definition?
@@ -103,7 +103,7 @@ Identifier* enumdecl()
       type = newid(Id, str, l, h); type->next = ids; ids = type;
     }
     type->tok = Enum;
-    type->val = sizeof (int);
+    type->val = sizeof(int);
     next();
     int i = 0;
     while (tok !='}')
@@ -128,7 +128,7 @@ Identifier* enumdecl()
   return type;
 }
 
-Identifier* structdecl()
+static Identifier* structdecl()
 {
   Identifier* type = 0;
   int l;
@@ -148,7 +148,7 @@ Identifier* structdecl()
     else if (type->tok != Id)
     { printf("%d: bad struct declaration; struct name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok]); exit(-1); }
     type->tok = Struct;
-    type->val = sizeof (int);
+    type->val = sizeof(int);
     return type;
   }
   if (tok == '{') // struct definition?
@@ -168,7 +168,7 @@ Identifier* structdecl()
       type = newid(Id, str, l, h); type->next = ids; ids = type;
     }
     type->tok = Struct;
-    type->val = sizeof (int);
+    type->val = sizeof(int);
     next();
     int o = 0; // offset in structure
     while (tok !='}')
@@ -226,6 +226,10 @@ static int module()
 {
 }
 
+static int compile()
+{
+}
+
 static int init()
 {
   ids = 0;
@@ -234,14 +238,16 @@ static int init()
   id = idEnum   = newid(EnumKW,   "enum",   gethash("enum"),   0); id->next = ids; ids = id;
   id = idInt    = newid(IntKW,    "int",    gethash("int"),    0); id->next = ids; ids = id;
   id = idStruct = newid(StructKW, "struct", gethash("struct"), 0); id->next = ids; ids = id;
-  idChar->val = sizeof (char);
-  idEnum->val = sizeof (int);
-  idInt->val  = sizeof (int);
+  idChar->val = sizeof(char);
+  idEnum->val = sizeof(int);
+  idInt->val  = sizeof(int);
 }
 
 int main(int argc, char* argv[])
 {
-  int ret = module();
+  int ret = init();
+  if (ret != 0) return ret;
+  ret = compile();
   if (ret != 0) return ret;
   return 0;
 }
