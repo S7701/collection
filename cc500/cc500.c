@@ -22,19 +22,17 @@
 
 /* Our library functions. */
 void exit(int);
-int getchar(void);
 void *malloc(int);
+int getchar(void);
 int putchar(int);
 
 /* The first thing defined must be main(). */
-int main1();
-int main()
-{
-  return main1();
+int compile();
+int main() {
+  return compile();
 }
 
-char *my_realloc(char *old, int oldlen, int newlen)
-{
+char *my_realloc(char *old, int oldlen, int newlen) {
   char *new = malloc(newlen);
   int i = 0;
   while (i <= oldlen - 1) {
@@ -44,19 +42,17 @@ char *my_realloc(char *old, int oldlen, int newlen)
   return new;
 }
 
+void error() {
+  exit(1);
+}
+
 int nextc;
 char *token;
 int token_size;
 
-void error()
-{
-  exit(1);
-}
-
 int i;
 
-void takechar()
-{
+void takechar() {
   if (token_size <= i + 1) {
     int x = (i + 10) << 1;
     token = my_realloc(token, token_size, x);
@@ -67,8 +63,7 @@ void takechar()
   nextc = getchar();
 }
 
-void get_token()
-{
+void get_token() {
   int w = 1;
   while (w) {
     w = 0;
@@ -115,16 +110,14 @@ void get_token()
   }
 }
 
-int peek(char *s)
-{
+int peek(char *s) {
   int i = 0;
   while ((s[i] == token[i]) & (s[i] != 0))
     i = i + 1;
   return s[i] == token[i];
 }
 
-int accept(char *s)
-{
+int accept(char *s) {
   if (peek(s)) {
     get_token();
     return 1;
@@ -133,8 +126,7 @@ int accept(char *s)
     return 0;
 }
 
-void expect(char *s)
-{
+void expect(char *s) {
   if (accept(s) == 0)
     error();
 }
@@ -144,22 +136,19 @@ int code_size;
 int codepos;
 int code_offset;
 
-void save_int(char *p, int n)
-{
+void save_int(char *p, int n) {
   p[0] = n;
   p[1] = n >> 8;
   p[2] = n >> 16;
   p[3] = n >> 24;
 }
 
-int load_int(char *p)
-{
+int load_int(char *p) {
   return ((p[0] & 255) + ((p[1] & 255) << 8) +
           ((p[2] & 255) << 16) + ((p[3] & 255) << 24));
 }
 
-void emit(int n, char *s)
-{
+void emit(int n, char *s) {
   i = 0;
   if (code_size <= codepos + n) {
     int x = (codepos + n) << 1;
@@ -173,13 +162,11 @@ void emit(int n, char *s)
   }
 }
 
-void be_push()
-{
+void be_push() {
   emit(1, "\x50"); /* push %eax */
 }
 
-void be_pop(int n)
-{
+void be_pop(int n) {
   emit(6, "\x81\xc4...."); /* add $(n * 4),%esp */
   save_int(code + codepos - 4, n << 2);
 }
@@ -189,8 +176,7 @@ int table_size;
 int table_pos;
 int stack_pos;
 
-int sym_lookup(char *s)
-{
+int sym_lookup(char *s) {
   int t = 0;
   int current_symbol = 0;
   while (t <= table_pos - 1) {
@@ -208,8 +194,7 @@ int sym_lookup(char *s)
   return current_symbol;
 }
 
-void sym_declare(char *s, int type, int value)
-{
+void sym_declare(char *s, int type, int value) {
   int t = table_pos;
   i = 0;
   while (s[i] != 0) {
@@ -228,8 +213,7 @@ void sym_declare(char *s, int type, int value)
   table_pos = t + 6;
 }
 
-int sym_declare_global(char *s)
-{
+int sym_declare_global(char *s) {
   int current_symbol = sym_lookup(s);
   if (current_symbol == 0) {
     sym_declare(s, 'U', code_offset);
@@ -238,8 +222,7 @@ int sym_declare_global(char *s)
   return current_symbol;
 }
 
-void sym_define_global(int current_symbol)
-{
+void sym_define_global(int current_symbol) {
   int i;
   int j;
   int t = current_symbol;
@@ -258,8 +241,7 @@ void sym_define_global(int current_symbol)
 
 int number_of_args;
 
-void sym_get_value(char *s)
-{
+void sym_get_value(char *s) {
   int t;
   if ((t = sym_lookup(s)) == 0)
     error();
@@ -283,8 +265,7 @@ void sym_get_value(char *s)
     error();
 }
 
-void be_start()
-{
+void be_start() {
   emit(16, "\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00");
   emit(16, "\x02\x00\x03\x00\x01\x00\x00\x00\x54\x80\x04\x08\x34\x00\x00\x00");
   emit(16, "\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00");
@@ -295,15 +276,6 @@ void be_start()
   sym_define_global(sym_declare_global("exit"));
   /* pop %ebx ; pop %ebx ; xor %eax,%eax ; inc %eax ; int $0x80 */
   emit(7, "\x5b\x5b\x31\xc0\x40\xcd\x80");
-
-  sym_define_global(sym_declare_global("getchar"));
-  /* mov $3,%eax ; xor %ebx,%ebx ; push %ebx ; mov %esp,%ecx */
-  emit(10, "\xb8\x03\x00\x00\x00\x31\xdb\x53\x89\xe1");
-  /* xor %edx,%edx ; inc %edx ; int $0x80 */
-  /* test %eax,%eax ; pop %eax ; jne . + 7 */
-  emit(10, "\x31\xd2\x42\xcd\x80\x85\xc0\x58\x75\x05");
-  /* mov $-1,%eax ; ret */
-  emit(6, "\xb8\xff\xff\xff\xff\xc3");
 
   sym_define_global(sym_declare_global("malloc"));
   /* mov 4(%esp),%eax */
@@ -317,6 +289,15 @@ void be_start()
   /* mov $-1,%eax ; ret */
   emit(6, "\xb8\xff\xff\xff\xff\xc3");
 
+  sym_define_global(sym_declare_global("getchar"));
+  /* mov $3,%eax ; xor %ebx,%ebx ; push %ebx ; mov %esp,%ecx */
+  emit(10, "\xb8\x03\x00\x00\x00\x31\xdb\x53\x89\xe1");
+  /* xor %edx,%edx ; inc %edx ; int $0x80 */
+  /* test %eax,%eax ; pop %eax ; jne . + 7 */
+  emit(10, "\x31\xd2\x42\xcd\x80\x85\xc0\x58\x75\x05");
+  /* mov $-1,%eax ; ret */
+  emit(6, "\xb8\xff\xff\xff\xff\xc3");
+
   sym_define_global(sym_declare_global("putchar"));
   /* mov $4,%eax ; xor %ebx,%ebx ; inc %ebx */
   emit(8, "\xb8\x04\x00\x00\x00\x31\xdb\x43");
@@ -326,8 +307,7 @@ void be_start()
   save_int(code + 85, codepos - 89); /* entry set to first thing in file */
 }
 
-void be_finish()
-{
+void be_finish() {
   save_int(code + 68, codepos);
   save_int(code + 72, codepos);
   i = 0;
@@ -337,8 +317,7 @@ void be_finish()
   }
 }
 
-void promote(int type)
-{
+void promote(int type) {
   /* 1 = char lval, 2 = int lval, 3 = other */
   if (type == 1)
     emit(3, "\x0f\xbe\x00"); /* movsbl (%eax),%eax */
@@ -354,8 +333,7 @@ int expression();
  *     constant
  *     ( expression )
  */
-int primary_expr()
-{
+int primary_expr() {
   int type;
   if (('0' <= token[0]) & (token[0] <= '9')) {
     int n = 0;
@@ -421,15 +399,13 @@ int primary_expr()
   return type;
 }
 
-void binary1(int type)
-{
+void binary1(int type) {
   promote(type);
   be_push();
   stack_pos = stack_pos + 1;
 }
 
-int binary2(int type, int n, char *s)
-{
+int binary2(int type, int n, char *s) {
   promote(type);
   emit(n, s);
   stack_pos = stack_pos - 1;
@@ -442,8 +418,7 @@ int binary2(int type, int n, char *s)
  *         postfix-expr [ expression ]
  *         postfix-expr ( expression-list-opt )
  */
-int postfix_expr()
-{
+int postfix_expr() {
   int type = primary_expr();
   if (accept("[")) {
     binary1(type); /* pop %ebx ; add %ebx,%eax */
@@ -482,8 +457,7 @@ int postfix_expr()
  *         additive-expr + postfix-expr
  *         additive-expr - postfix-expr
  */
-int additive_expr()
-{
+int additive_expr() {
   int type = postfix_expr();
   while (1) {
     if (accept("+")) {
@@ -505,8 +479,7 @@ int additive_expr()
  *         shift-expr << additive-expr
  *         shift-expr >> additive-expr
  */
-int shift_expr()
-{
+int shift_expr() {
   int type = additive_expr();
   while (1) {
     if (accept("<<")) {
@@ -527,8 +500,7 @@ int shift_expr()
  *         shift-expr
  *         relational-expr <= shift-expr
  */
-int relational_expr()
-{
+int relational_expr() {
   int type = shift_expr();
   while (accept("<=")) {
     binary1(type);
@@ -545,8 +517,7 @@ int relational_expr()
  *         equality-expr == relational-expr
  *         equality-expr != relational-expr
  */
-int equality_expr()
-{
+int equality_expr() {
   int type = relational_expr();
   while (1) {
     if (accept("==")) {
@@ -571,8 +542,7 @@ int equality_expr()
  *         equality-expr
  *         bitwise-and-expr & equality-expr
  */
-int bitwise_and_expr()
-{
+int bitwise_and_expr() {
   int type = equality_expr();
   while (accept("&")) {
     binary1(type); /* pop %ebx ; and %ebx,%eax */
@@ -586,8 +556,7 @@ int bitwise_and_expr()
  *         bitwise-and-expr
  *         bitwise-and-expr | bitwise-or-expr
  */
-int bitwise_or_expr()
-{
+int bitwise_or_expr() {
   int type = bitwise_and_expr();
   while (accept("|")) {
     binary1(type); /* pop %ebx ; or %ebx,%eax */
@@ -601,8 +570,7 @@ int bitwise_or_expr()
  *         bitwise-or-expr
  *         bitwise-or-expr = expression
  */
-int expression()
-{
+int expression() {
   int type = bitwise_or_expr();
   if (accept("=")) {
     be_push();
@@ -623,8 +591,7 @@ int expression()
  *     char *
  *     int
  */
-void type_name()
-{
+void type_name() {
   get_token();
   while (accept("*")) {
   }
@@ -641,8 +608,7 @@ void type_name()
  *     return ;
  *     expr ;
  */
-void statement()
-{
+void statement() {
   int p1;
   int p2;
   if (accept("{")) {
@@ -720,8 +686,7 @@ void statement()
  * parameter-declaration:
  *     type-name identifier-opt
  */
-void program()
-{
+void program() {
   int current_symbol;
   while (token[0]) {
     type_name();
@@ -755,8 +720,7 @@ void program()
   }
 }
 
-int main1()
-{
+int compile() {
   code_offset = 134512640; /* 0x08048000 */
   be_start();
   nextc = getchar();
