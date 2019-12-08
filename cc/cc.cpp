@@ -23,28 +23,20 @@ struct Identifier {
   int val;          // Num: value; Local, Global, Func, Member: offset; Enum, Struct: size in bytes
 };
 
-int tok;              // current token
-Identifier* id;       // currently parsed identifier
-int val;              // currently parsed integer value
-int line;             // current line number
-Identifier* ids;      // global identifier list
-Identifier* kws;      // keyword list
-Identifier* idAuto;   // identifier for keyword 'auto'
-Identifier* idChar;   // identifier for keyword 'char'
-Identifier* idEnum;   // identifier for keyword 'enum'
-Identifier* idInt;    // identifier for keyword 'int'
-Identifier* idStruct; // identifier for keyword 'struct'
-Identifier* idVoid;   // identifier for keyword 'void'
+int tok;          // current token
+Identifier* id;   // currently parsed identifier
+int line;         // current line number
+int val;          // currently parsed integer value
+Identifier* kws;  // keyword list
+Identifier* ids;  // global identifier list
 
-static int get_hash(const char* str)
-{
+static int get_hash(const char* str) {
   int h = *str;
   while (*str) h = h * 131 + *str++;
   return (h << 6) + strlen(str);
 }
 
-static Identifier* new_id(Token tok, const char* str, int hash, int line)
-{
+static Identifier* new_id(Token tok, const char* str, int hash, int line) {
   Identifier* i = (Identifier*) malloc(sizeof (Identifier));
   memset(i, 0, sizeof (Identifier));
   i->tok = tok;
@@ -53,8 +45,7 @@ static Identifier* new_id(Token tok, const char* str, int hash, int line)
   i->line = line;
 }
 
-static Identifier* get_id(Identifier* list, const char* str, int hash)
-{
+static Identifier* get_id(Identifier* list, const char* str, int hash) {
   Identifier* i = ids;
   while (i)
   {
