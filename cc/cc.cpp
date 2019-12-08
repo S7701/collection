@@ -4,12 +4,12 @@
 
 enum Token {
   Num = 128, Local, Global, Func, Enum, Struct, Member, Id,
-  AutoKW, CharKW, EnumKW, IntKW, StructKW
+  AutoKW, CharKW, EnumKW, IntKW, StructKW, VoidKW
 };
 
 const char* tokens[] = {
   "number", "local variable", "global variable", "function", "enumeration", "structure", "identifier",
-  "auto", "char", "enum", "int", "struct"
+  "auto", "char", "enum", "int", "struct", "void"
 };
 
 struct Identifier {
@@ -23,25 +23,27 @@ struct Identifier {
   int val;          // Num: value; Local, Global, Func, Member: offset; Enum, Struct: size in bytes
 };
 
-int tok;         // current token
-Identifier* id;  // currently parsed identifier
-int ival;        // currently parsed integer value
-int line;        // current line number
+int tok;              // current token
+Identifier* id;       // currently parsed identifier
+int val;              // currently parsed integer value
+int line;             // current line number
 Identifier* ids;      // global identifier list
+Identifier* kws;      // keyword list
 Identifier* idAuto;   // identifier for keyword 'auto'
 Identifier* idChar;   // identifier for keyword 'char'
 Identifier* idEnum;   // identifier for keyword 'enum'
 Identifier* idInt;    // identifier for keyword 'int'
 Identifier* idStruct; // identifier for keyword 'struct'
+Identifier* idVoid;   // identifier for keyword 'void'
 
-static int gethash(const char* str)
+static int get_hash(const char* str)
 {
   int h = *str;
   while (*str) h = h * 131 + *str++;
   return (h << 6) + strlen(str);
 }
 
-static Identifier* newid(Token tok, const char* str, int hash, int line)
+static Identifier* new_id(Token tok, const char* str, int hash, int line)
 {
   Identifier* i = (Identifier*) malloc(sizeof (Identifier));
   memset(i, 0, sizeof (Identifier));
@@ -51,7 +53,7 @@ static Identifier* newid(Token tok, const char* str, int hash, int line)
   i->line = line;
 }
 
-static Identifier* getid(Identifier* list, const char* str, int hash)
+static Identifier* get_id(Identifier* list, const char* str, int hash)
 {
   Identifier* i = ids;
   while (i)
@@ -63,8 +65,7 @@ static Identifier* getid(Identifier* list, const char* str, int hash)
 
 static void next();
 
-Identifier* enumdecl()
-{
+Identifier* enum_decl() {
   Identifier* type = 0;
   int l;
   l = line; // save enum line number
@@ -99,8 +100,8 @@ Identifier* enumdecl()
     {
       char str[20];
       sprintf(str, "__unnamed_enum_%04X");
-      int h = gethash(str);
-      type = newid(Id, str, l, h); type->next = ids; ids = type;
+      int h = get_hash(str);
+      type = new_id(Id, str, l, h); type->next = ids; ids = type;
     }
     type->tok = Enum;
     type->val = sizeof (int);
@@ -116,7 +117,7 @@ Identifier* enumdecl()
       {
         next();
         if (tok != Num) { printf("%d: bad enumerator initializer; number expected, got %s\n", line, tokens[id->tok]); exit(-1); }
-        i = ival;
+        i = val;
         next();
       }
       name->tok = Num; name->val = i++;
@@ -128,11 +129,9 @@ Identifier* enumdecl()
   return type;
 }
 
-Identifier* structdecl()
-{
+Identifier* struct_decl() {
   Identifier* type = 0;
-  int l;
-  l = line; // save struct line number
+  int l = line; // save struct line number
   next();
   if (tok == Id) // named struct?
   {
@@ -164,8 +163,8 @@ Identifier* structdecl()
     {
       char str[20];
       sprintf(str, "__unnamed_enum_%04X");
-      int h = gethash(str);
-      type = newid(Id, str, l, h); type->next = ids; ids = type;
+      int h = get_hash(str);
+      type = new_id(Id, str, l, h); type->next = ids; ids = type;
     }
     type->tok = Struct;
     type->val = sizeof (int);
@@ -190,8 +189,7 @@ Identifier* structdecl()
 // "struct" identifier '{' (type ('*')* identifier ';')* '}' (('*')* identifier (',' ('*')* identifier)*)? ';' |
 // "struct" '{' (type ('*')* identifier ';')* '}' ('*')* identifier (',' ('*')* identifier)* ';' |
 // type ('*')* identifier (',' ('*')* identifier)* ';'
-static Identifier* decl()
-{
+static Identifier* decl() {
   Identifier* type = 0;
   switch (tok)
   {
@@ -202,10 +200,10 @@ static Identifier* decl()
     type = id;
     break;
   case EnumKW:
-    type = enumdecl();
+    type = enum_decl();
     break;
   case StructKW:
-    type = structdecl();
+    type = struct_decl();
     break;
   case Id: // Identifier
     type = id;
@@ -222,26 +220,45 @@ static Identifier* decl()
   return type;
 }
 
-static int module()
-{
+static int module() {
 }
 
-static int init()
-{
+static int fin(int error_code) {
+  if (id) free(id);
+  // free keyword list
+  while (kws) {
+    id = kws; kws = kws->next;
+    free(id);
+  }
+  kws = 0;
+  // free global identifier list
+  while (ids) {
+    id = ids; ids = ids->next;
+    free(id);
+  }
   ids = 0;
-  id = idAuto   = newid(AutoKW,   "auto",   gethash("auto"),   0); id->next = ids; ids = id;
-  id = idChar   = newid(CharKW,   "char",   gethash("char"),   0); id->next = ids; ids = id;
-  id = idEnum   = newid(EnumKW,   "enum",   gethash("enum"),   0); id->next = ids; ids = id;
-  id = idInt    = newid(IntKW,    "int",    gethash("int"),    0); id->next = ids; ids = id;
-  id = idStruct = newid(StructKW, "struct", gethash("struct"), 0); id->next = ids; ids = id;
-  idChar->val = sizeof (char);
-  idEnum->val = sizeof (int);
-  idInt->val  = sizeof (int);
+  // 
+  return error_code;
 }
 
-int main(int argc, char* argv[])
-{
-  int ret = module();
-  if (ret != 0) return ret;
-  return 0;
+static int init() {
+  const char* str;
+  ids = 0; kws = 0;
+  str = "auto"; id = new_id(AutoKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  str = "char"; id = new_id(CharKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  id->val = sizeof (char);
+  str = "enum"; id = new_id(EnumKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  id->val = sizeof (int);
+  str = "int"; id = new_id(IntKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  id->val  = sizeof (int);
+  str = "struct"; id = new_id(StructKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  str = "void"; id = new_id(VoidKW, str, get_hash(str), 0); id->next = kws; kws = id;
+}
+
+int main(int argc, char* argv[]) {
+  int ret = init();
+  if (ret != 0) return fin(ret);
+  ret = module();
+  if (ret != 0) return fin(ret);
+  return fin(ret);
 }
