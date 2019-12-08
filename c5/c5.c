@@ -36,22 +36,27 @@ int *e, *le,  // current position in emitted code
 enum {
   Num = 128, Fun, Sys, Glo, Loc, Id, Load, Enter,
   Char, Else, Enum, If, Int, Return, Sizeof, While,
-  Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+  Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Bracket
 };
 
 // opcodes
-enum { LEA ,IMM ,JMP ,JSR ,JZ  ,JNZ ,ENTER ,ADJ ,LEAVE ,LDI  ,LDB  ,STI  ,STB  ,PUSH ,
-       OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,WRITE,CLOSE,PRINTF,MALLOC,FREE,MEMSET,MEMCMP,MEMCPY,MMAP,DLSYM,QSORT,EXIT };
+enum {
+  LEA, IMM, JMP, JSR, JZ, JNZ, ENTER, ADJUST, LEAVE, LDI, LDB, STI, STB, PUSH,
+  OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
+  OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCMP, MEMCPY, MMAP, DLSYM, QSORT, EXIT
+};
 
 // types
-enum { CHAR, INT, PTR };
+enum {
+  CHAR, INT, PTR
+};
 
 // identifier offsets (since we can't create an ident struct)
-enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
+enum {
+  Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz
+};
 
-void next()
-{
+void next() {
   char *pp;
 
   while (tk = *p) {
@@ -62,7 +67,7 @@ void next()
         lp = p;
         while (le < e) {
           printf("%.8s", &ops[*++le * 8]);
-          if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
+          if (*le <= ADJUST) printf(" %d\n", *++le); else printf("\n");
         }
       }
       ++line;
@@ -124,18 +129,17 @@ void next()
     else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; }
     else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; }
     else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }
-    else if (tk == '&') { if (*p == '&') { ++p; tk = Lan; } else tk = And; return; }
+    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }
     else if (tk == '^') { tk = Xor; return; }
     else if (tk == '%') { tk = Mod; return; }
     else if (tk == '*') { tk = Mul; return; }
-    else if (tk == '[') { tk = Brak; return; }
+    else if (tk == '[') { tk = Bracket; return; }
     else if (tk == '?') { tk = Cond; return; }
     else if (tk == '~' || tk == ';' || tk == '{' || tk == '}' || tk == '(' || tk == ')' || tk == ']' || tk == ',' || tk == ':') return;
   }
 }
 
-void expr(int lev)
-{
+void expr(int lev) {
   int t, *d, *b;
 
   if (!tk) { printf("%d: unexpected eof in expression\n", line); exit(-1); }
@@ -214,7 +218,7 @@ void expr(int lev)
   }
   else if (tk == Inc || tk == Dec) {
     t = tk; next(); expr(Inc);
-    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment\n", line); exit(-1); }
+    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment/-decrement\n", line); exit(-1); }
   }
   else { printf("%d: bad expression\n", line); exit(-1); }
 
@@ -233,8 +237,8 @@ void expr(int lev)
       expr(Cond);
       --n; *n = (int)(n+1); *--n = (int)d; *--n = (int)b; *--n = Cond;
     }
-    else if (tk == Lor) { next(); expr(Lan); if (*n==Num && *b==Num) n[1] = b[1] || n[1]; else { *--n = (int)b; *--n = Lor; } ty = INT; }
-    else if (tk == Lan) { next(); expr(Or);  if (*n==Num && *b==Num) n[1] = b[1] && n[1]; else { *--n = (int)b; *--n = Lan; } ty = INT; }
+    else if (tk == Lor)  { next(); expr(Land); if (*n==Num && *b==Num) n[1] = b[1] || n[1]; else { *--n = (int)b; *--n = Lor;  } ty = INT; }
+    else if (tk == Land) { next(); expr(Or);   if (*n==Num && *b==Num) n[1] = b[1] && n[1]; else { *--n = (int)b; *--n = Land; } ty = INT; }
     else if (tk == Or)  { next(); expr(Xor); if (*n==Num && *b==Num) n[1] = b[1] |  n[1]; else { *--n = (int)b; *--n = Or;  } ty = INT; }
     else if (tk == Xor) { next(); expr(And); if (*n==Num && *b==Num) n[1] = b[1] ^  n[1]; else { *--n = (int)b; *--n = Xor; } ty = INT; }
     else if (tk == And) { next(); expr(Eq);  if (*n==Num && *b==Num) n[1] = b[1] &  n[1]; else { *--n = (int)b; *--n = And; } ty = INT; }
@@ -260,12 +264,12 @@ void expr(int lev)
     else if (tk == Div) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] / n[1]; else { *--n = (int)b; *--n = Div; } ty = INT; }
     else if (tk == Mod) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] % n[1]; else { *--n = (int)b; *--n = Mod; } ty = INT; }
     else if (tk == Inc || tk == Dec) {
-      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment\n", line); exit(-1); }
+      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment/-decrement\n", line); exit(-1); }
       *--n = (ty > PTR) ? sizeof(int) : sizeof(char); *--n = Num;
       *--n = (int)b; *--n = (tk == Inc) ? Sub : Add;
       next();
     }
-    else if (tk == Brak) {
+    else if (tk == Bracket) {
       next(); expr(Assign);
       if (tk == ']') next(); else { printf("%d: close bracket expected\n", line); exit(-1); }
       if (t > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } }
@@ -277,8 +281,7 @@ void expr(int lev)
   }
 }
 
-void stmt()
-{
+void stmt() {
   int *a, *b, *c;
 
   if (tk == If) {
@@ -319,8 +322,7 @@ void stmt()
   }
 }
 
-void gen(int *n)
-{
+void gen(int *n) {
   int i, *a, *b;
 
   i = *n;
@@ -343,7 +345,7 @@ void gen(int *n)
     *b = (int)(e + 1);
   }
   else if (i == Lor) { gen((int *)n[1]); *++e = JNZ; b = ++e; gen(n+2); *b = (int)(e + 1); }
-  else if (i == Lan) { gen((int *)n[1]); *++e = JZ;  b = ++e; gen(n+2); *b = (int)(e + 1); }
+  else if (i == Land) { gen((int *)n[1]); *++e = JZ;  b = ++e; gen(n+2); *b = (int)(e + 1); }
   else if (i == Or)  { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = OR; }
   else if (i == Xor) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = XOR; }
   else if (i == And) { gen((int *)n[1]); *++e = PUSH; gen(n+2); *++e = AND; }
@@ -364,7 +366,7 @@ void gen(int *n)
     b = (int *)n[1];
     while (b) { gen(b+1); *++e = PUSH; b = (int *)*b; }
     if (i == Fun) *++e = JSR; *++e = n[2];
-    if (n[3]) { *++e = ADJ; *++e = n[3]; }
+    if (n[3]) { *++e = ADJUST; *++e = n[3]; }
   }
   else if (i == While) {
     *++e = JMP; b = ++e; gen(n+2); *b = (int)(e + 1);
@@ -377,9 +379,8 @@ void gen(int *n)
   else if (i != ';') { printf("%d: compiler error gen=%d\n", line, i); exit(-1); }
 }
 
-int main(int argc, char **argv)
-{
-  int fd, bt, ty, poolsz, *idmain, *ast;
+int main(int argc, char **argv) {
+  int fd, bt, poolsz, *idmain, *ast;
   int *pc, *sp, *bp, a, cycle; // vm registers
   int i, *t; // temps
 
@@ -407,7 +408,7 @@ int main(int argc, char **argv)
         "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCMP  MEMCPY  MMAP    DLSYM   QSORT   EXIT    ";
 
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp memcpy mmap dlsym qsort exit void main";
+      "open read write close printf malloc free memset memcmp memcpy mmap dlsym qsort exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
@@ -521,7 +522,7 @@ int main(int argc, char **argv)
   *++e = PUSH; t = e;
   *++e = EXIT;
   // setup stack
-  sp = (int *)((int)sp + poolsz);
+  bp = sp = (int *)((int)sp + poolsz);
   *--sp = argc;
   *--sp = (int)argv;
   *--sp = (int)t;
@@ -532,7 +533,7 @@ int main(int argc, char **argv)
     i = *pc++; ++cycle;
     if (debug) {
       printf("%d> %.8s", cycle, &ops[i * 8]);
-      if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
+      if (i <= ADJUST) printf(" %d\n", *pc); else printf("\n");
     }
     if      (i == LEA)   a = (int)(bp + *pc++);                             // load local address
     else if (i == IMM)   a = *pc++;                                         // load global address or immediate
@@ -541,7 +542,7 @@ int main(int argc, char **argv)
     else if (i == JZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
     else if (i == JNZ)   pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
     else if (i == ENTER) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }     // enter subroutine
-    else if (i == ADJ)   sp = sp + *pc++;                                   // stack adjust
+    else if (i == ADJUST)   sp = sp + *pc++;                                // stack adjust
     else if (i == LEAVE) { sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; } // leave subroutine
     else if (i == LDI)   a = *(int *)a;                                     // load int
     else if (i == LDB)   a = *(char *)a;                                    // load byte
