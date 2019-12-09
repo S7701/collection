@@ -8,7 +8,7 @@
 
 // Written by Robert Swierczek
 
-#include <unistd.h>
+//#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
@@ -37,7 +37,7 @@ int *id,      // currently parsed identifier
 enum {
   Num = 128, Fun, Glo, Loc, Id, Load, Enter,
   Char, Else, Enum, If, Int, Return, Sizeof, While,
-  Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+  Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Bracket
 };
 
 // types
@@ -46,9 +46,8 @@ enum { CHAR, INT, PTR };
 // identifier offsets (since we can't create an ident struct)
 enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
 
-void next()
-{
-  char *pp;
+void next() {
+  char *pp; // previous position
 
   while (tk = *p) {
     ++p;
@@ -101,9 +100,14 @@ void next()
       pp = data;
       while (*p != 0 && *p != tk) {
         if ((ival = *p++) == '\\') {
-          if ((ival = *p++) == 'n') ival = '\n';
+          if ((ival = *p++) == '0') ival = '\0';
+          else if (ival == 't') ival = '\t';
+          else if (ival == 'v') ival = '\v';
+          else if (ival == 'f') ival = '\f';
+          else if (ival == 'r') ival = '\r';
+          else if (ival == 'n') ival = '\n';
         }
-        if (tk == '"') *data++ = ival;
+        if (tk == '"') *data++ = (char)ival;
       }
       ++p;
       if (tk == '"') ival = (int)pp; else tk = Num;
@@ -116,18 +120,17 @@ void next()
     else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; }
     else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; }
     else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }
-    else if (tk == '&') { if (*p == '&') { ++p; tk = Lan; } else tk = And; return; }
+    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }
     else if (tk == '^') { tk = Xor; return; }
     else if (tk == '%') { tk = Mod; return; }
     else if (tk == '*') { tk = Mul; return; }
-    else if (tk == '[') { tk = Brak; return; }
     else if (tk == '?') { tk = Cond; return; }
-    else if (tk == '~' || tk == ';' || tk == '{' || tk == '}' || tk == '(' || tk == ')' || tk == ']' || tk == ',' || tk == ':') return;
+    else if (tk == '[') { tk = Bracket; return; }
+    else if (tk != ' ' && tk != '\t' && tk != '\v' && tk != '\f' && tk != '\r') return;
   }
 }
 
-void expr(int lev)
-{
+void expr(int lev) {
   int t, *d, *b;
 
   if (!tk) { printf("%d: unexpected eof in expression\n", line); exit(-1); }
@@ -210,7 +213,7 @@ void expr(int lev)
   }
   else if (tk == Inc || tk == Dec) {
     t = tk; next(); expr(Inc);
-    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment\n", line); exit(-1); }
+    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment/-decrement\n", line); exit(-1); }
   }
   else { printf("%d: bad expression\n", line); exit(-1); }
 
@@ -229,8 +232,8 @@ void expr(int lev)
       expr(Cond);
       --n; *n = (int)(n+1); *--n = (int)d; *--n = (int)b; *--n = Cond;
     }
-    else if (tk == Lor) { next(); expr(Lan); if (*n==Num && *b==Num) n[1] = b[1] || n[1]; else { *--n = (int)b; *--n = Lor; } ty = INT; }
-    else if (tk == Lan) { next(); expr(Or);  if (*n==Num && *b==Num) n[1] = b[1] && n[1]; else { *--n = (int)b; *--n = Lan; } ty = INT; }
+    else if (tk == Lor) { next();  expr(Land); if (*n==Num && *b==Num) n[1] = b[1] || n[1]; else { *--n = (int)b; *--n = Lor;  } ty = INT; }
+    else if (tk == Land) { next(); expr(Or);   if (*n==Num && *b==Num) n[1] = b[1] && n[1]; else { *--n = (int)b; *--n = Land; } ty = INT; }
     else if (tk == Or)  { next(); expr(Xor); if (*n==Num && *b==Num) n[1] = b[1] |  n[1]; else { *--n = (int)b; *--n = Or;  } ty = INT; }
     else if (tk == Xor) { next(); expr(And); if (*n==Num && *b==Num) n[1] = b[1] ^  n[1]; else { *--n = (int)b; *--n = Xor; } ty = INT; }
     else if (tk == And) { next(); expr(Eq);  if (*n==Num && *b==Num) n[1] = b[1] &  n[1]; else { *--n = (int)b; *--n = And; } ty = INT; }
@@ -256,12 +259,12 @@ void expr(int lev)
     else if (tk == Div) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] / n[1]; else { *--n = (int)b; *--n = Div; } ty = INT; }
     else if (tk == Mod) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] % n[1]; else { *--n = (int)b; *--n = Mod; } ty = INT; }
     else if (tk == Inc || tk == Dec) {
-      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment\n", line); exit(-1); }
+      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment/-decrement\n", line); exit(-1); }
       *--n = (ty > PTR) ? sizeof(int) : sizeof(char); *--n = Num;
       *--n = (int)b; *--n = (tk == Inc) ? Sub : Add;
       next();
     }
-    else if (tk == Brak) {
+    else if (tk == Bracket) {
       next(); expr(Assign);
       if (tk == ']') next(); else { printf("%d: close bracket expected\n", line); exit(-1); }
       if (t > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } }
@@ -273,8 +276,7 @@ void expr(int lev)
   }
 }
 
-void stmt()
-{
+void stmt() {
   int *a, *b, *c;
 
   if (tk == If) {
@@ -315,8 +317,7 @@ void stmt()
   }
 }
 
-void gen(int *n)
-{
+void gen(int *n) {
   int i; char *b;
 
   i = *n;
@@ -366,7 +367,7 @@ void gen(int *n)
     gen(n+2);
     *(int *)b = e - b - 4;
   }
-  else if (i == Lan) {
+  else if (i == Land) {
     gen((int *)n[1]);
     *(int *)e = 0x840fc085; e = e+4; b = e; e = e+4;    if (src) printf("    test %%eax, %%eax\n    jeq <fwd>\n");
     gen(n+2);
@@ -435,9 +436,8 @@ void gen(int *n)
   else if (i != ';') { printf("%d: compiler error gen=%d\n", line, i); exit(-1); }
 }
 
-int main(int argc, char **argv)
-{
-  int fd, bt, ty, poolsz, *idmain, *ast;
+int main(int argc, char **argv) {
+  int fd, bt, poolsz, *idmain, *ast;
   int i, *t; // temps
 
   --argc; ++argv;
@@ -446,7 +446,7 @@ int main(int argc, char **argv)
 
   if ((fd = open(*argv, 0)) < 0) { printf("could not open(%s)\n", *argv); return -1; }
 
-  poolsz = 256*1024; // arbitrary size
+  poolsz = 256 * 1024; // arbitrary size
   if (!(sym = malloc(poolsz))) { printf("could not malloc(%d) symbol area\n", poolsz); return -1; }
   if (!(data = malloc(poolsz))) { printf("could not malloc(%d) data area\n", poolsz); return -1; }
   if (!(dsym = malloc(64))) { printf("could not malloc(64) dsym\n"); return -1; }
@@ -496,7 +496,7 @@ int main(int argc, char **argv)
         next();
       }
     }
-    while (tk != ';' && tk != '}') {
+    while (tk != ';') {
       ty = bt;
       while (tk == Mul) { next(); ty = ty + PTR; }
       if (tk != Id) { printf("%d: bad global declaration\n", line); return -1; }
@@ -553,6 +553,7 @@ int main(int argc, char **argv)
           }
           id = id + Idsz;
         }
+        tk = ';';
       }
       else {
         id[Class] = Glo;

@@ -1,9 +1,10 @@
 #include <windows.h>
-void *mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off)
+#include <io.h>
+void *mmap(void *addr, size_t len, int prot, int flags, int fildes, size_t off)
 {
   HANDLE fm, h;
   void *map;
-  const off_t maxSize = off + (off_t)len;
+  const size_t maxSize = off + len;
 
   h = (HANDLE)_get_osfhandle(fildes);
   fm = CreateFileMapping(h, NULL, PAGE_EXECUTE_READWRITE, 0, maxSize, NULL);
