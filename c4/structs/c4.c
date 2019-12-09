@@ -1,6 +1,6 @@
 // c4.c - C in four functions
 
-// char, int, enums, structs, pointer types
+// char, int, pointer types, structs and enums
 // if, while, return and expression statements
 // just enough features to allow self-compilation and a bit more
 
@@ -20,7 +20,7 @@ int *e, *le,  // current position in emitted code
     *tsize,   // array (indexed by type) of type sizes
     tnew,     // next available type
     tk,       // current token
-    ival,     // current token integer value
+    val,      // current token value
     ty,       // current expression type
     loc,      // local variable offset
     line,     // current line number
@@ -50,17 +50,17 @@ struct member_s {
 } **members; // array (indexed by type) of struct member lists
 
 // tokens and classes (operators last and in precedence order)
-enum { Num = 128, Fun, Sys, Glo, Loc, Id,
-       Char, Else, Enum, If, Int, Return, Sizeof, Struct, While,
-       Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Dot, Arrow, Bracket };
+enum Token { Num = 128, Fun, Sys, Glo, Loc, Id,
+             Char, Else, Enum, If, Int, Return, Sizeof, Struct, While,
+             Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Dot, Arrow, Bracket };
 
 // opcodes
-enum { LEA, IMM, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH, 
-       OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD, 
-       OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCPY, MEMCMP, EXIT };
+enum Opcode { LEA, IMM, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH, 
+              OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD, 
+              OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCPY, MEMCMP, EXIT };
 
 // types
-enum { CHAR, INT, PTR = 256, PTR2 = 512 };
+enum Ty { CHAR, INT, PTR = 256, PTR2 = 512 };
        
 void next() {
   char *pp; // previous position
@@ -97,12 +97,12 @@ void next() {
       return;
     }
     else if (tk >= '0' && tk <= '9') { // number
-      if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      if (val = tk - '0') { while (*p >= '0' && *p <= '9') val = val * 10 + *p++ - '0'; }
       else if (*p == 'x' || *p == 'X') {
         while ((tk = *++p) && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F')))
-          ival = ival * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
+          val = val * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
       }
-      else { while (*p >= '0' && *p <= '7') ival = ival * 8 + *p++ - '0'; }
+      else { while (*p >= '0' && *p <= '7') val = val * 8 + *p++ - '0'; }
       tk = Num;
       return;
     }
@@ -119,49 +119,51 @@ void next() {
     else if (tk == '\'' || tk == '"') { // string or character literal
       pp = data;
       while (*p != 0 && *p != tk) {
-        if ((ival = *p++) == '\\') {
-          if ((ival = *p++) == '0') ival = '\0';
-          else if (ival == 't') ival = '\t';
-          else if (ival == 'v') ival = '\v';
-          else if (ival == 'f') ival = '\f';
-          else if (ival == 'r') ival = '\r';
-          else if (ival == 'n') ival = '\n';
+        if ((val = *p++) == '\\') {
+          if ((val = *p++) == '0') val = '\0';
+          else if (val == 't') val = '\t';
+          else if (val == 'v') val = '\v';
+          else if (val == 'f') val = '\f';
+          else if (val == 'r') val = '\r';
+          else if (val == 'n') val = '\n';
         }
-        if (tk == '"') *data++ = (char)ival;
+        if (tk == '"') *data++ = (char)val;
       }
       ++p;
-      if (tk == '"') ival = (int)pp; else tk = Num;
+      if (tk == '"') val = (int)pp; else tk = Num;
       return;
     }
-    else if (tk == '=') { if (*p == '=') { ++p; tk = Eq; } else tk = Assign; return; }
-    else if (tk == '+') { if (*p == '+') { ++p; tk = Inc; } else tk = Add; return; }
-    else if (tk == '-') { if (*p == '-') { ++p; tk = Dec; } else if (*p == '>') { ++p; tk = Arrow; } else tk = Sub; return; }
-    else if (tk == '!') { if (*p == '=') { ++p; tk = Ne; } return; }
-    else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; }
-    else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; }
-    else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }
-    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }
-    else if (tk == '^') { tk = Xor; return; }
-    else if (tk == '%') { tk = Mod; return; }
-    else if (tk == '*') { tk = Mul; return; }
-    else if (tk == '?') { tk = Cond; return; }
-    else if (tk == '.') { tk = Dot; return; }
-    else if (tk == '[') { tk = Bracket; return; }
-    else if (tk != ' ' && tk != '\t' && tk != '\v' && tk != '\f' && tk != '\r') return;
+    else if (tk == '=') { if (*p == '=') { ++p; tk = Eq; } else tk = Assign; return; } // operator == or =
+    else if (tk == '+') { if (*p == '+') { ++p; tk = Inc; } else tk = Add; return; }   // operator ++ or +
+    else if (tk == '-') { if (*p == '-') { ++p; tk = Dec; } else if (*p == '>') { ++p; tk = Arrow; } else tk = Sub; return; }   // operator --, -> or -
+    else if (tk == '!') { if (*p == '=') { ++p; tk = Ne; } return; }                   // operator != or !
+    else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; } // operator <= or << or <
+    else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; } // operator >= or >> or >
+    else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }    // operator || or |
+    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }  // operator && or &
+    else if (tk == '^') { tk = Xor; return; }     // operator ^
+    else if (tk == '%') { tk = Mod; return; }     // operator %
+    else if (tk == '*') { tk = Mul; return; }     // operator *
+    else if (tk == '?') { tk = Cond; return; }    // operator ?
+    else if (tk == '.') { tk = Dot; return; }     // operator .
+    else if (tk == '[') { tk = Bracket; return; } // operator []
+    else if (tk != ' ' && tk != '\t' && tk != '\v' && tk != '\f' && tk != '\r') return; // skip whitespaces
   }
 }
 
 void expr(int lev) {
-  int t, *d;
+  int t, *b, sz;
+  struct ident_s *d;
+  struct member_s *m;
 
   if (!tk) { printf("%d: unexpected eof in expression\n", line); exit(-1); }
-  else if (tk == Num) { *++e = IMM; *++e = ival; next(); ty = INT; }
-  else if (tk == '"') {
-    *++e = IMM; *++e = ival; next();
+  else if (tk == Num) { *++e = IMM; *++e = val; next(); ty = INT; } // number or character literal
+  else if (tk == '"') { // string literal
+    *++e = IMM; *++e = val; next();
     while (tk == '"') next();
     data = (char *)((int)data + sizeof(int) & -sizeof(int)); ty = PTR;
   }
-  else if (tk == Sizeof) {
+  else if (tk == Sizeof) { // sizeof operator
     next(); if (tk == '(') next(); else { printf("%d: open paren expected in sizeof (tk=%d)\n", line, tk); exit(-1); }
     ty = INT; if (tk == Int) next(); else if (tk == Char) { next(); ty = CHAR; }
     while (tk == Mul) { next(); ty = ty + PTR; }
@@ -169,37 +171,37 @@ void expr(int lev) {
     *++e = IMM; *++e = (ty == CHAR) ? sizeof(char) : sizeof(int);
     ty = INT;
   }
-  else if (tk == Id) {
+  else if (tk == Id) { // identifier
     d = id; next();
     if (tk == '(') { // function call
       next();
       t = 0;
-      while (tk != ')') { expr(Assign); *++e = PUSH; ++t; if (tk == ',') next(); }
+      while (tk != ')') { expr(Assign); *++e = PUSH; ++t; if (tk == ',') next(); } // parameter
       next();
       if (d->class == Sys) *++e = d->val;
       else if (d->class == Fun) { *++e = JSR; *++e = d->val; }
       else { printf("%d: bad function call (class=%d)\n", line, d->class); exit(-1); }
-      if (t) { *++e = ADJ; *++e = t; }
+      if (t) { *++e = ADJ; *++e = t; } // stack adjust after call
       ty = d->type;
     }
     else if (d->class == Num) { *++e = IMM; *++e = d->val; ty = INT; } // enum identifier
     else { // variable
-      if (d->class == Loc) { *++e = LEA; *++e = loc - d->val; }
-      else if (d->class == Glo) { *++e = IMM; *++e = d->val; }
+      if (d->class == Loc) { *++e = LEA; *++e = loc - d->val; } // local
+      else if (d->class == Glo) { *++e = IMM; *++e = d->val; }  // global
       else { printf("%d: undefined variable (class=%d)\n", line, d->class); exit(-1); }
       *++e = ((ty = d->type) == CHAR) ? LC : LI;
     }
   }
-  else if (tk == '(') { // type cast
+  else if (tk == '(') { // type cast or group
     next();
-    if (tk == Int || tk == Char) {
+    if (tk == Int || tk == Char) { // type cast
       t = (tk == Int) ? INT : CHAR; next();
       while (tk == Mul) { next(); t = t + PTR; }
       if (tk == ')') next(); else { printf("%d: bad cast (tk=%d)\n", line, tk); exit(-1); }
       expr(Inc);
       ty = t;
     }
-    else {
+    else { // group
       expr(Assign);
       if (tk == ')') next(); else { printf("%d: close paren expected (tk=%d)\n", line, tk); exit(-1); }
     }
@@ -219,7 +221,7 @@ void expr(int lev) {
   else if (tk == Add) { next(); expr(Inc); ty = INT; } // unary plus operator
   else if (tk == Sub) { // unary minus operator
     next(); *++e = IMM;
-    if (tk == Num) { *++e = -ival; next(); } else { *++e = 0; *++e = PUSH; expr(Inc); *++e = SUB; }
+    if (tk == Num) { *++e = -val; next(); } else { *++e = 0; *++e = PUSH; expr(Inc); *++e = SUB; }
     ty = INT;
   }
   else if (tk == Inc || tk == Dec) { // pre-increment/-decrement
@@ -243,15 +245,15 @@ void expr(int lev) {
     }
     else if (tk == Cond) {
       next();
-      *++e = BZ; d = ++e;
+      *++e = BZ; b = ++e;
       expr(Assign);
       if (tk == ':') next(); else { printf("%d: conditional missing colon (tk=%d)\n", line, tk); exit(-1); }
-      *d = (int)(e + 3); *++e = JMP; d = ++e;
+      *b = (int)(e + 3); *++e = JMP; b = ++e;
       expr(Cond);
-      *d = (int)(e + 1);
+      *b = (int)(e + 1);
     }
-    else if (tk == Lor)  { next(); *++e = BNZ; d = ++e; expr(Land); *d = (int)(e + 1); ty = INT; }
-    else if (tk == Land) { next(); *++e = BZ;  d = ++e; expr(Or);   *d = (int)(e + 1); ty = INT; }
+    else if (tk == Lor)  { next(); *++e = BNZ; b = ++e; expr(Land); *b = (int)(e + 1); ty = INT; }
+    else if (tk == Land) { next(); *++e = BZ;  b = ++e; expr(Or);   *b = (int)(e + 1); ty = INT; }
     else if (tk == Or)  { next(); *++e = PUSH; expr(Xor); *++e = OR;  ty = INT; }
     else if (tk == Xor) { next(); *++e = PUSH; expr(And); *++e = XOR; ty = INT; }
     else if (tk == And) { next(); *++e = PUSH; expr(Eq);  *++e = AND; ty = INT; }
@@ -265,7 +267,7 @@ void expr(int lev) {
     else if (tk == Shr) { next(); *++e = PUSH; expr(Add); *++e = SHR; ty = INT; }
     else if (tk == Add) {
       next(); *++e = PUSH; expr(Mul);
-      if ((ty = t) > PTR) { *++e = PUSH; *++e = IMM; *++e = sizeof(int); *++e = MUL; }
+      if ((ty = t) > PTR) { *++e = PUSH; *++e = IMM; *++e = sizeof(int); *++e = MUL; } // add value to int pointer
       *++e = ADD;
     }
     else if (tk == Sub) {
@@ -288,11 +290,11 @@ void expr(int lev) {
       *++e = (tk == Inc) ? SUB : ADD;
       next();
     }
-    else if (tk == Dot) { ty = ty + PTR; }
-    else if (tk == Arrow) {
-      if (ty <= PTR + INT || ty >= PTR2) { printf("%d: structure expected\n", line); exit(-1); }
+    else if (tk == Dot || tk == Arrow) {
+      if (tk == Dot) { ty = ty + PTR; }
+      if (ty <= PTR + INT || ty >= PTR2) { printf("%d: structure expected (ty=%d)\n", line, ty); exit(-1); }
       next();
-      if (tk != Id) { printf("%d: structure member expected\n", line); exit(-1); }
+      if (tk != Id) { printf("%d: structure member expected (tk=%d)\n", line, tk); exit(-1); }
       m = members[ty - PTR]; while (m && m->id != id) m = m->next;
       if (!m) { printf("%d: structure member not found\n", line); exit(-1); }
       if (m->offset) { *++e = PUSH; *++e = IMM; *++e = m->offset; *++e = ADD; }
@@ -428,7 +430,7 @@ int main(int argc, char **argv) {
           if (tk == Assign) {
             next();
             if (tk != Num) { printf("%d: bad enum initializer (tk=%d)\n", line, tk); return -1; }
-            i = ival;
+            i = val;
             next();
           }
           id->class = Num; id->type = INT; id->val = i++;
@@ -556,7 +558,7 @@ int main(int argc, char **argv) {
           }
           id = id + 1;
         }
-        tk = ';'; // break while loop
+        tk = ';'; // break inner while loop
       }
       else { // global
         id->class = Glo;
