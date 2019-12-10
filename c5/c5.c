@@ -25,25 +25,21 @@ int *e, *le,  // current position in emitted code
     *n,       // current node in abstract syntax tree
     *sym,     // symbol table (simple list of identifiers)
     tk,       // current token
-    ival,     // current token integer value
+    val,      // current token value
     ty,       // current expression type
     line,     // current line number
     src,      // print source and assembly flag
     debug;    // print executed instructions
 
 // tokens and classes (operators last and in precedence order)
-enum {
-  Num = 128, Fun, Sys, Glo, Loc, Id, Load, Enter,
-  Char, Else, Enum, If, Int, Return, Sizeof, While,
-  Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Bracket
-};
+enum { Num = 128, Fun, Sys, Glo, Loc, Id, Load, Enter,
+       Char, Else, Enum, If, Int, Return, Sizeof, While,
+       Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Bracket };
 
 // opcodes
-enum {
-  LEA    ,IMM    ,JMP    ,JSR    ,JZ     ,JNZ    ,ENTER  ,ADJ    ,LEAVE  ,LI     ,LC     ,SI     ,SC     ,PUSH   ,
-  OR     ,XOR    ,AND    ,EQ     ,NE     ,LT     ,GT     ,LE     ,GE     ,SHL    ,SHR    ,ADD    ,SUB    ,MUL    ,DIV    ,MOD    ,
-  OPEN   ,READ   ,WRITE  ,CLOSE  ,PRINTF ,MALLOC ,MFREE  ,MSET   ,MCMP   ,MCPY   ,EXIT
-};
+enum { LEA, IMM, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
+       OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
+       OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCPY, MEMCMP, EXIT };
 
 // types
 enum { CHAR, INT, PTR };
@@ -61,7 +57,7 @@ void next() {
         printf("%d: %.*s", line, p - lp, lp);
         lp = p;
         while (le < e) {
-          printf("    %.7s", &ops[*++le * 8]);
+          printf("    %.8s", &ops[*++le * 8]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
         }
       }
@@ -86,12 +82,12 @@ void next() {
       return;
     }
     else if (tk >= '0' && tk <= '9') { // number
-      if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      if (val = tk - '0') { while (*p >= '0' && *p <= '9') val = val * 10 + *p++ - '0'; }
       else if (*p == 'x' || *p == 'X') {
         while ((tk = *++p) && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F')))
-          ival = ival * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
+          val = val * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
       }
-      else { while (*p >= '0' && *p <= '7') ival = ival * 8 + *p++ - '0'; }
+      else { while (*p >= '0' && *p <= '7') val = val * 8 + *p++ - '0'; }
       tk = Num;
       return;
     }
@@ -108,18 +104,18 @@ void next() {
     else if (tk == '\'' || tk == '"') { // string
       pp = data;
       while (*p != 0 && *p != tk) {
-        if ((ival = *p++) == '\\') {
-          if ((ival = *p++) == '0') ival = '\0';
-          else if (ival == 't') ival = '\t';
-          else if (ival == 'v') ival = '\v';
-          else if (ival == 'f') ival = '\f';
-          else if (ival == 'r') ival = '\r';
-          else if (ival == 'n') ival = '\n';
+        if ((val = *p++) == '\\') {
+          if ((val = *p++) == '0') val = '\0';
+          else if (val == 't') val = '\t';
+          else if (val == 'v') val = '\v';
+          else if (val == 'f') val = '\f';
+          else if (val == 'r') val = '\r';
+          else if (val == 'n') val = '\n';
         }
-        if (tk == '"') *data++ = (char)ival;
+        if (tk == '"') *data++ = (char)val;
       }
       ++p;
-      if (tk == '"') ival = (int)pp; else tk = Num;
+      if (tk == '"') val = (int)pp; else tk = Num;
       return;
     }
     else if (tk == '=') { if (*p == '=') { ++p; tk = Eq; } else tk = Assign; return; }
@@ -143,9 +139,9 @@ void expr(int lev) {
   int t, *d, *b;
 
   if (!tk) { printf("%d: unexpected eof in expression\n", line); exit(-1); }
-  else if (tk == Num) { *--n = ival; *--n = Num; next(); ty = INT; }
+  else if (tk == Num) { *--n = val; *--n = Num; next(); ty = INT; }
   else if (tk == '"') {
-    *--n = ival; *--n = Num; next();
+    *--n = val; *--n = Num; next();
     while (tk == '"') next();
     data = (char *)((int)data + sizeof(int) & -sizeof(int)); ty = PTR;
   }
@@ -339,13 +335,13 @@ void gen(int *n) {
   }  
   else if (i == Cond) {
     gen((int *)n[1]);
-    *++e = JZ; b = ++e;
+    *++e = BZ; b = ++e;
     gen((int *)n[2]);
     if (n[3]) { *b = (int)(e + 3); *++e = JMP; b = ++e; gen((int *)n[3]); }
     *b = (int)(e + 1);
   }
-  else if (i == Lor)  { gen((int *)n[1]); *++e = JNZ; b = ++e; gen(n + 2); *b = (int)(e + 1); }
-  else if (i == Land) { gen((int *)n[1]); *++e = JZ;  b = ++e; gen(n + 2); *b = (int)(e + 1); }
+  else if (i == Lor)  { gen((int *)n[1]); *++e = BNZ; b = ++e; gen(n + 2); *b = (int)(e + 1); }
+  else if (i == Land) { gen((int *)n[1]); *++e = BZ;  b = ++e; gen(n + 2); *b = (int)(e + 1); }
   else if (i == Or)  { gen((int *)n[1]); *++e = PUSH; gen(n + 2); *++e = OR; }
   else if (i == Xor) { gen((int *)n[1]); *++e = PUSH; gen(n + 2); *++e = XOR; }
   else if (i == And) { gen((int *)n[1]); *++e = PUSH; gen(n + 2); *++e = AND; }
@@ -371,7 +367,7 @@ void gen(int *n) {
   else if (i == While) {
     *++e = JMP; b = ++e; gen(n + 2); *b = (int)(e + 1);
     gen((int *)n[1]);
-    *++e = JNZ; *++e = (int)(b + 1);
+    *++e = BNZ; *++e = (int)(b + 1);
   }
   else if (i == Return) { if (n[1]) gen((int *)n[1]); *++e = LEAVE; }
   else if (i == '{') { gen((int *)n[1]); gen(n + 2); }
@@ -403,9 +399,9 @@ int main(int argc, char **argv) {
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
 
-  ops = "LEA    ,IMM    ,JMP    ,JSR    ,JZ     ,JNZ    ,ENTER  ,ADJ    ,LEAVE  ,LI     ,LC     ,SI     ,SC     ,PUSH   ,"
-        "OR     ,XOR    ,AND    ,EQ     ,NE     ,LT     ,GT     ,LE     ,GE     ,SHL    ,SHR    ,ADD    ,SUB    ,MUL    ,DIV    ,MOD    ,"
-        "OPEN   ,READ   ,WRITE  ,CLOSE  ,PRINTF ,MALLOC ,MFREE  ,MSET   ,MCMP   ,MCPY   ,EXIT    ";
+  ops = "LEA     IMM     JMP     JSR     BZ      BNZ     ENTER   ADJ     LEAVE   LI      LC      SI      SC      PUSH    "
+        "OR      XOR     AND     EQ      NE      LT      GT      LE      GE      SHL     SHR     ADD     SUB     MUL     DIV     MOD     "
+        "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCPY  MEMCMP  EXIT    ";
 
   p = "char else enum if int return sizeof while "
       "open read write close printf malloc free memset memcmp memcpy exit "
@@ -505,7 +501,7 @@ int main(int argc, char **argv) {
           }
           id = id + Idsz;
         }
-        tk = ';'; // break while loop
+        tk = ';'; // break inner while loop
       }
       else { // global
         id[Class] = Glo;
@@ -534,15 +530,15 @@ int main(int argc, char **argv) {
   while (1) {
     i = *pc++; ++cycle;
     if (debug) {
-      printf("%d> %.7s", cycle, &ops[i * 8]);
+      printf("%d> %.8s", cycle, &ops[i * 8]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
     }
     if      (i == LEA)   a = (int)(bp + *pc++);                             // load local address
     else if (i == IMM)   a = *pc++;                                         // load global address or immediate
     else if (i == JMP)   pc = (int *)*pc;                                   // jump
     else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
-    else if (i == JZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
-    else if (i == JNZ)   pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
+    else if (i == BZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
+    else if (i == BNZ)   pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
     else if (i == ENTER) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }     // enter subroutine
     else if (i == ADJ)   sp = sp + *pc++;                                   // stack adjust
     else if (i == LEAVE) { sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; } // leave subroutine
@@ -575,10 +571,10 @@ int main(int argc, char **argv) {
     else if (i == CLOSE)  a = close(*sp);
     else if (i == PRINTF) a = printf((char *)*sp, sp[1], sp[2], sp[3], sp[4], sp[5]);
     else if (i == MALLOC) a = (int)malloc(*sp);
-    else if (i == MFREE)  free((void *)(a = *sp));
-    else if (i == MSET) a = (int)memset((char *)*sp, sp[1], sp[2]);
-    else if (i == MCMP) a = memcmp((char *)*sp, (char *)sp[1], sp[2]);
-    else if (i == MCPY) a = (int)memcpy((char *)*sp, (char *)sp[1], sp[2]);
+    else if (i == FREE)  free((void *)(a = *sp));
+    else if (i == MEMSET) a = (int)memset((char *)*sp, sp[1], sp[2]);
+    else if (i == MEMCPY) a = (int)memcpy((char *)*sp, (char *)sp[1], sp[2]);
+    else if (i == MEMCMP) a = memcmp((char *)*sp, (char *)sp[1], sp[2]);
     else if (i == EXIT)   { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1; }
   }
