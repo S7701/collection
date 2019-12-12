@@ -37,7 +37,7 @@ enum Token { Num = 128, Fun, Sys, Glo, Loc, Id, Load, Enter,
              Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Bracket };
 
 // opcodes
-enum Opcode { LEA, IMM, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
+enum Opcode { IMM, LEA, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
               OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
               OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCPY, MEMCMP, EXIT };
 
@@ -47,7 +47,7 @@ enum Type { CHAR, INT, PTR };
 // identifier offsets (since we can't create an ident struct)
 enum Identifier { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
 
-void next() {
+void next(void) {
   char *pp; // previous position
 
   while (tk = *p) {
@@ -274,7 +274,7 @@ void expr(int lev) {
   }
 }
 
-void stmt() {
+void stmt(void) {
   int *a, *b, *c;
 
   if (tk == If) {
@@ -396,7 +396,7 @@ int main(int argc, char **argv) {
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
 
-  ops = "LEA\0    IMM\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
+  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
         "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
         "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCPY\0 MEMCMP\0 EXIT\0   ";
 
@@ -531,8 +531,8 @@ int main(int argc, char **argv) {
       printf("%d> %s", cycle, &ops[i * 8]);
       if (i <= ADJ) printf(" %d (0x%08X)\n", *pc, *pc); else printf("\n");
     }
-    if      (i == LEA)   a = (int)(bp + *pc++);                             // load local address
-    else if (i == IMM)   a = *pc++;                                         // load global address or immediate
+    if      (i == IMM)   a = *pc++;                                         // load global address or immediate
+    else if (i == LEA)   a = (int)(bp + *pc++);                             // load local address
     else if (i == JMP)   pc = (int *)*pc;                                   // jump
     else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
     else if (i == BZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
