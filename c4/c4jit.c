@@ -150,10 +150,10 @@ void expr(int lev) {
       next();
       if (d[Class] == Fun) { *++e = 0xe8; *(int *)e = d[Val] - e + 4; e = e + 4; if (src) { printf("  call 0x%08X\n", d[Val]); }
       else { printf("%d: bad function call (class=%d)\n", line, d[Class]); exit(-1); }
-      if (t) { *++e = ADJ; *++e = t; } // stack adjust after call
+      if (t) { *(int *)e = 0xc483; e = e + 2; *++e = t * 4; if (src) { printf("  addl $%d, \%esp\n", t * 4); } } // stack adjust after call
       ty = d[Type];
     }
-    else if (d[Class] == Num) { *++e = IMM; *++e = d[Val]; ty = INT; } // enum identifier
+    else if (d[Class] == Num) { *++e = 0xb8; *(int *)e = d[Val]; e = e + 4; ty = INT; } // enum identifier
     else { // variable
       if (d[Class] == Loc) { *++e = LEA; *++e = loc - d[Val]; } // local
       else if (d[Class] == Glo) { *++e = IMM; *++e = d[Val]; }  // global
