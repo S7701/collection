@@ -15,17 +15,19 @@ bool debug = true;
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
+ESP8266WebServer server(80);  // instantiate server at port 80 (http port)
+
 #define PIXEL_COUNT 110
 #define PIXEL_PIN     2  // For Esp8266, the Pin is omitted and it uses GPIO2 due to UART1 hardware use.
 
 NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, PIXEL_PIN);
 
-const uint8_t Brightness = 255;
-
-RgbColor red(Brightness, 0, 0);
-//RgbColor green(0, Brightness, 0);
-//RgbColor blue(0, 0, Brightness);
-RgbColor white(Brightness);
+//RgbColor red(255, 0, 0);
+//RgbColor green(0, 255, 0);
+//RgbColor blue(0, 0, 255);
+RgbColor foreground(255, 0, 0);
+RgbColor background(0, 0, 0);
+RgbColor white(255);
 RgbColor black(0);
 
 class Word {
@@ -42,7 +44,7 @@ public:
 
   void on() {
     for (int i = from; i <= to; ++i) {
-      strip.SetPixelColor(i, red);
+      strip.SetPixelColor(i, foreground);
     }
     Serial.print(word);
     Serial.print(" ");
@@ -103,7 +105,7 @@ void setup() {
     strip.Show();
     delay(10);
   }
-  strip.ClearTo(black);
+  strip.ClearTo(background);
   strip.Show();
 
   connectWiFi();
@@ -165,7 +167,7 @@ void loop() {
     }
     Serial.println();
  
-    strip.ClearTo(black);
+    strip.ClearTo(background);
     es.on();
     ist.on();
     for (int i = 0; i < 3; ++i) {
