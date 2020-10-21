@@ -49,8 +49,8 @@ public:
   }
 };
 
-Word sechs(1,"sechs");
-Word uhr(8,"uhr");
+Word sechs(1, "sechs");
+Word uhr(8, "uhr");
 Word zehn(13, "zehn");
 Word acht(17, "acht");
 Word elf(22, "elf");
@@ -179,9 +179,11 @@ void loop() {
     strip.Show();
 
     Serial.println(".");
-  }
 
-  delay(1000); // 1 second
+    delay(1000); // 1 second
+  } else {
+    delay(100); // 1/10 second
+  }
 }
 
 void connectWiFi() {
