@@ -1,30 +1,28 @@
-#include <String.h>
-#include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
+#include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
+#include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
 #include <NTPClient.h>    // https://github.com/arduino-libraries/NTPClient
 #include <TimeLib.h>      // https://github.com/PaulStoffregen/Time
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
-#include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
-#include <ArduinoOTA.h>
+#include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
 bool debug = true;
 
-#define NTP_OFFSET   0 // s
-#define NTP_INTERVAL 60 * 1000 // ms
 #define NTP_ADDRESS  "de.pool.ntp.org"  // see ntp.org for ntp pools
 
 WiFiUDP wifiUDP;
-NTPClient ntpClient(wifiUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
+NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
 
 ESP8266WebServer server(80);  // instantiate server at port 80 (http port)
 
 #define PIXEL_COUNT 110
-#define PIXEL_PIN     2  // For Esp8266, the Pin is omitted and it uses GPIO2 due to UART1 hardware use.
+#define STRIP_PIN   2  // For esp8266, the pin is omitted and it uses GPIO2 due to UART1 hardware use.
 
-NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, PIXEL_PIN);
+NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, STRIP_PIN);
 
-//RgbColor red(255, 0, 0);
-//RgbColor green(0, 255, 0);
-//RgbColor blue(0, 0, 255);
+// RgbColor red(255, 0, 0);
+// RgbColor green(0, 255, 0);
+// RgbColor blue(0, 0, 255);
+
 RgbColor fgColor(255, 0, 0);
 RgbColor bgColor(0, 0, 0);
 RgbColor white(255);
@@ -33,67 +31,73 @@ RgbColor black(0);
 class Word {
   int from;
   int to;
-  String word;
+  const char* txt;
 
-public: 
-  Word(int _from, String _word) {
-    from = _from;
-    to = _from + _word.length() - 1;
-    word = _word;
-  }
+public:
+  Word(): Word(-1, "") {}
+  Word(int _from, const char* _txt):  from(_from), to(_from + strlen(_txt) - 1), txt(_txt) {}
 
-  void on() {
-    strip.ClearTo(fgColor, from, to);
-    Serial.print(word);
-    Serial.print(" ");
+  void show() {
+    if (from >= 0) {
+      strip.ClearTo(fgColor, from, to);
+      Serial.print(txt);
+      Serial.print(" ");
+    }
   }
 };
 
-Word sechs(1, "sechs");
-Word uhr(8, "uhr");
-Word zehn(13, "zehn");
-Word acht(17, "acht");
-Word elf(22, "elf");
-Word neun(25, "neun");
-Word vier(29, "vier");
-Word fuenf(33, "funf"); // not using ü as it counts as 2 letters
-Word drei(39, "drei");
-Word zwei(44, "zwei");
-Word eins(46, "eins"); Word ein(46, "ein");
-Word sieben(49, "sieben");
-Word zwoelf(56, "zwolf");
-Word halb(62, "halb");
-Word nach(68, "nach");
-Word vor(72, "vor");
-Word viertel(77, "viertel");
-Word dreiviertel(77, "dreiviertel");
-Word zehnm(88, "zehn");
-Word zwanzigm(92, "zwanzig");
-Word fuenfm(99, "funf");
-Word ist(104, "ist");
-Word es(108, "es");
-Word none(0, "");
+class Phrase {
+  int n;
+  Word words[3];
 
-Word hourWords[] = { zwoelf, eins, zwei, drei, vier, fuenf, sechs, sieben, acht, neun, zehn, elf, zwoelf, eins };
+public:
+  Phrase(Word& word1): n(1) { words[0] = word1; }
+  Phrase(Word& word1, Word& word2): n(2) { words[0] = word1; words[1] = word2; }
+  Phrase(Word& word1, Word& word2, Word& word3): n(3) { words[0] = word1; words[1] = word2; words[2] = word3; }
 
-Word minute5Words[13][3] = {
-  { uhr, none, none },          //  0
-  { fuenfm, nach, none },       //  1
-  { zehnm, nach, none },        //  2
-  { viertel, none, none },      //  3
-  { zehnm, vor, halb },         //  4
-  { fuenfm, vor, halb },        //  5
-  { halb, none, none },         //  6
-  { fuenfm, nach, halb },       //  7
-  { zehnm, nach, halb },        //  8
-  { dreiviertel, none, none },  //  9
-  { zehnm, vor, none },         // 10
-  { fuenfm, vor, none }         // 11
+  void show() {
+    for (int i = 0; i < n; ++i) {
+      words[i].show();
+    }
+  }
+};
+
+Word es(108, "es"), ist(104, "ist"), fuenfm(99, "funf"); // not using ü as it counts as 2 letters
+Word zehnm(88, "zehn"), zwanzigm(92, "zwanzig");
+Word dreiviertel(77, "dreiviertel"), viertel(77, "viertel");
+Word nach(68, "nach"), vor(72, "vor");
+Word halb(62, "halb"), zwoelf(56, "zwolf"); // not using ö as it counts as 2 letters
+Word zwei(44, "zwei"), ein(46, "ein"), eins(46, "eins"), sieben(49, "sieben");
+Word drei(39, "drei"), fuenf(33, "funf"); // not using ü as it counts as 2 letters
+Word elf(22, "elf"), neun(25, "neun"), vier(29, "vier");
+Word acht(17, "acht"), zehn(13, "zehn");
+Word sechs(1, "sechs"), uhr(8, "uhr");
+
+Word hours[] = { zwoelf, eins, zwei, drei, vier, fuenf, sechs, sieben, acht, neun, zehn, elf, zwoelf, eins };
+
+Phrase phrases[] = {
+  Phrase(uhr),
+  Phrase(fuenfm, nach),
+  Phrase(zehnm, nach),
+  Phrase(viertel),
+  Phrase(zehnm, vor, halb),
+  Phrase(fuenfm, vor, halb),
+  Phrase(halb),
+  Phrase(fuenfm, nach, halb),
+  Phrase(zehnm, nach, halb),
+  Phrase(dreiviertel),
+  Phrase(zehnm, vor),
+  Phrase(fuenfm, vor)
 };
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
+
+#if STRIP_PIN != LED_BUILTIN
+  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
+  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
+#endif
 
   strip.Begin();
   for (int i = 0; i < PIXEL_COUNT; ++i) {
@@ -105,10 +109,18 @@ void setup() {
   strip.ClearTo(bgColor);
   strip.Show();
 
-  showTime(now());
+#if STRIP_PIN == LED_BUILTIN
+  delay(1);
+  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
+  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
+#endif
 
   WiFiManager wifiManager;
   wifiManager.autoConnect("Wordclock");
+
+  ntpClient.begin();
+  setSyncProvider(getNtpTime);
+  setSyncInterval(3600);  // 1 hour
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
@@ -129,73 +141,69 @@ void setup() {
   });
   ArduinoOTA.begin();
 
-  ntpClient.begin();
-  setSyncProvider(getNtpTime);
-  setSyncInterval(3600);  // 1 hour
-
   Serial.println("Ready");
 }
 
 void loop() {
+  static int state = 0;
   time_t local = now();
 
   ArduinoOTA.handle();
 
-  if (second(local) == 0) {
+  switch (state) {
+  case 0: // Show time on wordclock
     showTime(local);
-
-    delay(1000); // 1 second
-  } else {
-    delay(100); // 1/10 second
+    state = 1;
+    break;
+  case 1: // Wait until the first second of the current minute is over
+    if (second(local) != 0) state = 2;
+    break;
+  case 2: // Wait for the first second in the next minute
+    if (second(local) == 0) state = 0;
+    break;
   }
+
+  delay(100); // ms
 }
 
 void showTime(time_t local) {
-  int curHour12 = hourFormat12(local);  // 1...12
-  int curMinute5 = minute(local) / 5;  // 0...11
-  int displayHour = (curMinute5 >= 3) ? (curHour12 + 1) : curHour12;  // 1...13
+  int hour12 = hourFormat12(local);  // 1...12 (0?)
+  int minute5 = minute(local) / 5;  // 0...11
 
-  Serial.print("Show time: ");
-  Serial.print(hour(local));
-  Serial.print(":");
-  Serial.print(minute(local));
-  Serial.print(":");
-  Serial.print(second(local));
+  if (minute5 >= 3) ++hour12;  // 1...13 (0?)
+
+  Serial.printf("Show time: %d:%02d:%02d", hour(local), minute(local), second(local));
   if (debug) {
-    Serial.print(" (curHour12=");
-    Serial.print(curHour12);
-    Serial.print(", curMinute5=");
-    Serial.print(curMinute5);
-    Serial.print(", displayHour=");
-    Serial.print(displayHour);
-    Serial.print(")");
+    Serial.printf(" (hour12=%d, minute5=%d)", hour12, minute5);
   }
   Serial.println();
 
-	digitalWrite(BUILTIN_LED, LOW);  // Prepare for LED strip communication
+#if STRIP_PIN == LED_BUILTIN
+  strip.Begin();
+#endif
 
   strip.ClearTo(bgColor);
-  es.on();
-  ist.on();
-  for (int i = 0; i < 3; ++i) {
-    minute5Words[curMinute5][i].on();
-  }
-  if ((displayHour == 1) && (curMinute5 == 0)) {
-    ein.on();
+  es.show(); ist.show();
+  phrases[minute5].show();
+  if ((hour12 == 1) && (minute5 == 0)) {
+    ein.show();
   } else {
-    hourWords[displayHour].on();
+    hours[hour12].show();
   }
   strip.Show();
-  Serial.println();
 
+#if STRIP_PIN == LED_BUILTIN
   delay(1);
-	digitalWrite(BUILTIN_LED, HIGH);  // Turn off builtin LED
+  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
+  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
+#endif
+
+  Serial.println();
 }
 
 time_t getNtpTime() {
   ntpClient.update();
-  unsigned long epochTime = ntpClient.getEpochTime();
-  time_t utc = epochTime;
+  time_t utc = ntpClient.getEpochTime();
 
   // Central European Time (Frankfurt, Paris)
   TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
@@ -203,12 +211,10 @@ time_t getNtpTime() {
   Timezone tz(CEST, CET);
   time_t local = tz.toLocal(utc);
 
-  Serial.print("NTP time: ");
-  Serial.print(hour(local));
-  Serial.print(":");
-  Serial.print(minute(local));
-  Serial.print(":");
-  Serial.println(second(local));
+  Serial.printf("NTP time: %d:%02d:%02d", hour(local), minute(local), second(local));
+  Serial.println();
+
+  showTime(local);
 
   return local;
 }
