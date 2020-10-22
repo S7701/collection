@@ -25,8 +25,8 @@ NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, PIXE
 //RgbColor red(255, 0, 0);
 //RgbColor green(0, 255, 0);
 //RgbColor blue(0, 0, 255);
-RgbColor foreground(255, 0, 0);
-RgbColor background(0, 0, 0);
+RgbColor fgColor(255, 0, 0);
+RgbColor bgColor(0, 0, 0);
 RgbColor white(255);
 RgbColor black(0);
 
@@ -43,9 +43,7 @@ public:
   }
 
   void on() {
-    for (int i = from; i <= to; ++i) {
-      strip.SetPixelColor(i, foreground);
-    }
+    strip.ClearTo(fgColor, from, to);
     Serial.print(word);
     Serial.print(" ");
   }
@@ -76,9 +74,9 @@ Word ist(104, "ist");
 Word es(108, "es");
 Word none(0, "");
 
-Word hourWords[] = { none, eins, zwei, drei, vier, fuenf, sechs, sieben, acht, neun, zehn, elf, zwoelf };
+Word hourWords[] = { zwoelf, eins, zwei, drei, vier, fuenf, sechs, sieben, acht, neun, zehn, elf, zwoelf, eins };
 
-Word minuteWords[13][3] = {
+Word minute5Words[13][3] = {
   { uhr, none, none },          //  0
   { fuenfm, nach, none },       //  1
   { zehnm, nach, none },        //  2
@@ -90,8 +88,7 @@ Word minuteWords[13][3] = {
   { zehnm, nach, halb },        //  8
   { dreiviertel, none, none },  //  9
   { zehnm, vor, none },         // 10
-  { fuenfm, vor, none },        // 11
-  { none, none, none }          // 12
+  { fuenfm, vor, none }         // 11
 };
 
 void setup() {
@@ -105,10 +102,13 @@ void setup() {
     strip.Show();
     delay(10);
   }
-  strip.ClearTo(background);
+  strip.ClearTo(bgColor);
   strip.Show();
 
-  connectWiFi();
+  showTime(now());
+
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("Wordclock");
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
@@ -137,50 +137,12 @@ void setup() {
 }
 
 void loop() {
-  static bool first = true;
   time_t local = now();
 
   ArduinoOTA.handle();
 
-  if (first || second(local) == 0) {
-    first = false;
-
-    int curHour12 = hourFormat12(local);  // 1...12
-    int curMinute5 = minute(local) / 5;  // 0...11
-    int displayHour = (curMinute5 >= 3) ? (curHour12 + 1) : curHour12;  // 1...13
-    if (displayHour == 13) displayHour = 1;
- 
-    Serial.print("Show time: ");
-    Serial.print(hour(local));
-    Serial.print(":");
-    Serial.print(minute(local));
-    Serial.print(":");
-    Serial.print(second(local));
-    if (debug) {
-      Serial.print(" (curHour12=");
-      Serial.print(curHour12);
-      Serial.print(", curMinute5=");
-      Serial.print(curMinute5);
-      Serial.print(", displayHour=");
-      Serial.print(displayHour);
-      Serial.print(")");
-    }
-    Serial.println();
- 
-    strip.ClearTo(background);
-    es.on();
-    ist.on();
-    for (int i = 0; i < 3; ++i) {
-      minuteWords[curMinute5][i].on();
-    }
-    if ((displayHour == 1) && (curMinute5 == 0)) {
-      ein.on();
-    } else {
-      hourWords[displayHour].on();
-    }
-    strip.Show();
-
-    Serial.println(".");
+  if (second(local) == 0) {
+    showTime(local);
 
     delay(1000); // 1 second
   } else {
@@ -188,9 +150,46 @@ void loop() {
   }
 }
 
-void connectWiFi() {
-  WiFiManager wifiManager;
-  wifiManager.autoConnect("Wordclock");
+void showTime(time_t local) {
+  int curHour12 = hourFormat12(local);  // 1...12
+  int curMinute5 = minute(local) / 5;  // 0...11
+  int displayHour = (curMinute5 >= 3) ? (curHour12 + 1) : curHour12;  // 1...13
+
+  Serial.print("Show time: ");
+  Serial.print(hour(local));
+  Serial.print(":");
+  Serial.print(minute(local));
+  Serial.print(":");
+  Serial.print(second(local));
+  if (debug) {
+    Serial.print(" (curHour12=");
+    Serial.print(curHour12);
+    Serial.print(", curMinute5=");
+    Serial.print(curMinute5);
+    Serial.print(", displayHour=");
+    Serial.print(displayHour);
+    Serial.print(")");
+  }
+  Serial.println();
+
+	digitalWrite(BUILTIN_LED, LOW);  // Prepare for LED strip communication
+
+  strip.ClearTo(bgColor);
+  es.on();
+  ist.on();
+  for (int i = 0; i < 3; ++i) {
+    minute5Words[curMinute5][i].on();
+  }
+  if ((displayHour == 1) && (curMinute5 == 0)) {
+    ein.on();
+  } else {
+    hourWords[displayHour].on();
+  }
+  strip.Show();
+  Serial.println();
+
+  delay(1);
+	digitalWrite(BUILTIN_LED, HIGH);  // Turn off builtin LED
 }
 
 time_t getNtpTime() {
