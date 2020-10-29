@@ -1,3 +1,4 @@
+#include <String.h>
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
 #include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
 #include <NTPClient.h>    // https://github.com/arduino-libraries/NTPClient
@@ -5,9 +6,11 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-bool debug = true;
+bool display = true;
+bool demo = false;
 
-#define NTP_ADDRESS  "de.pool.ntp.org"  // see ntp.org for ntp pools
+#define NTP_ADDRESS   "de.pool.ntp.org"  // see ntp.org for ntp pools
+#define NTP_INTERVALL 3600  // seconds
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -15,7 +18,7 @@ NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
 ESP8266WebServer server(80);  // instantiate server at port 80 (http port)
 
 #define PIXEL_COUNT 110
-#define STRIP_PIN   2  // For esp8266, the pin is omitted and it uses GPIO2 due to UART1 hardware use.
+#define STRIP_PIN   2  // for esp8266, the pin is omitted and it uses GPIO2 due to UART1 hardware use
 
 NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, STRIP_PIN);
 
@@ -95,8 +98,9 @@ void setup() {
   Serial.println("Booting");
 
 #if STRIP_PIN != LED_BUILTIN
-  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
-  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
+  // turn the builtin LED off by setting the output HIGH
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 #endif
 
   strip.Begin();
@@ -104,13 +108,14 @@ void setup() {
     strip.ClearTo(black);
     strip.SetPixelColor(i, white);
     strip.Show();
-    delay(10);
   }
   strip.ClearTo(bgColor);
   strip.Show();
 
 #if STRIP_PIN == LED_BUILTIN
+  // let the strip update
   delay(1);
+  // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
   digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
 #endif
@@ -120,7 +125,14 @@ void setup() {
 
   ntpClient.begin();
   setSyncProvider(getNtpTime);
-  setSyncInterval(3600);  // 1 hour
+  setSyncInterval(NTP_INTERVALL);  // 1 hour
+
+  server.on("/", HTTP_GET, handleHttpGet);
+  server.on("/", HTTP_POST, handleHttpPost);
+  server.onNotFound([](){
+    server.send(404, "text/plain", "404: Not found");
+  });
+  server.begin();
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
@@ -148,19 +160,28 @@ void loop() {
   static int state = 0;
   time_t local = now();
 
+  if (demo) {
+    static time_t now = 0;
+    local = now;
+    now += 10;
+  }
+
+  server.handleClient();
   ArduinoOTA.handle();
 
-  switch (state) {
-  case 0: // Show time on wordclock
-    showTime(local);
-    state = 1;
-    break;
-  case 1: // Wait until the first second of the current minute is over
-    if (second(local) != 0) state = 2;
-    break;
-  case 2: // Wait for the first second in the next minute
-    if (second(local) == 0) state = 0;
-    break;
+  if (display) {
+    switch (state) {
+    case 0: // Show time on wordclock
+      showTime(local);
+      state = 1;
+      break;
+    case 1: // Wait until the first second of the current minute is over
+      if (second(local) != 0) state = 2;
+      break;
+    case 2: // Wait for the first second in the next minute
+      if (second(local) == 0) state = 0;
+      break;
+    }
   }
 
   delay(100); // ms
@@ -172,13 +193,10 @@ void showTime(time_t local) {
 
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
 
-  Serial.printf("Show time: %d:%02d:%02d", hour(local), minute(local), second(local));
-  if (debug) {
-    Serial.printf(" (hour12=%d, minute5=%d)", hour12, minute5);
-  }
-  Serial.println();
+  Serial.printf("Show time: %d:%02d:%02d, display %s\n", hour(local), minute(local), second(local), display ? "on" : "off");
 
 #if STRIP_PIN == LED_BUILTIN
+  // reinitialize LED strip
   strip.Begin();
 #endif
 
@@ -193,9 +211,11 @@ void showTime(time_t local) {
   strip.Show();
 
 #if STRIP_PIN == LED_BUILTIN
+  // let the strip update
   delay(1);
-  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
-  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
+  // turn the builtin LED off by setting the output HIGH
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 #endif
 
   Serial.println();
@@ -211,10 +231,121 @@ time_t getNtpTime() {
   Timezone tz(CEST, CET);
   time_t local = tz.toLocal(utc);
 
-  Serial.printf("NTP time: %d:%02d:%02d", hour(local), minute(local), second(local));
-  Serial.println();
-
-  showTime(local);
+  Serial.printf("NTP time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
 
   return local;
+}
+
+void handleHttpGet() {
+  String html =
+    "<!DOCTYPE html>" \
+    "<html>" \
+    "<head>" \
+    "<title>Wortuhr</title>" \
+    "</head>" \
+    "<body>" \
+    "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
+
+    "<strong>Wortuhr Einstellungen</strong>" \
+
+    "<p>" \
+    "<label>Anzeige</label><br>" \
+    "<input type=\"radio\" name=\"display\" value=\"on\"";
+  html += (display ? " checked" : "");
+  html +=
+    ">" \
+    "<label>ein</label>" \
+    "<input type=\"radio\" name=\"display\" value=\"off\"";
+  html += (display ? "" : " checked");
+  html +=
+    ">" \
+    "<label>aus</label>" \
+    "</p>" \
+
+    "<p>" \
+    "<label>Demo</label><br>" \
+    "<input type=\"radio\" name=\"demo\" value=\"on\"";
+  html += (demo ? " checked" : "");
+  html +=
+    ">" \
+    "<label>ein</label>" \
+    "<input type=\"radio\" name=\"demo\" value=\"off\"";
+  html += (demo ? "" : " checked");
+  html +=
+    ">" \
+    "<label>aus</label>" \
+    "</p>" \
+
+    "<p>" \
+    "<label>Vordergrundfarbe</label><br>" \
+    "<input type=\"color\" name=\"foreground\" value=\"#";
+  html += toString(fgColor);
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<p>" \
+    "<label>Hintergrundfarbe</label><br>" \
+    "<input type=\"color\" name=\"background\" value=\"#";
+  html += toString(bgColor);
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<input type=\"submit\" value=\"Senden\">" \
+    "</form>" \
+    "</body>" \
+    "</html>";
+  server.send(200, "text/html", html);
+}
+
+void handleHttpPost() {
+  if (server.hasArg("display")) {
+    if (server.arg("display") == "on") display = true;
+    if (server.arg("display") == "off") display = false;
+  }
+  if (server.hasArg("demo")) {
+    if (server.arg("demo") == "on") demo = true;
+    if (server.arg("demo") == "off") demo = false;
+  }
+  if (server.hasArg("foreground")) {
+    fgColor = toRgbColor(server.arg("foreground"));
+  }
+  if (server.hasArg("background")) {
+    bgColor = toRgbColor(server.arg("background"));
+  }
+
+  if (!display) {
+#if STRIP_PIN == LED_BUILTIN
+    // reinitialize LED strip
+    strip.Begin();
+#endif
+
+    strip.ClearTo(black);
+    strip.Show();
+
+#if STRIP_PIN == LED_BUILTIN
+    // let the strip update
+    delay(1);
+    // turn the builtin LED off by setting the output HIGH
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
+#endif
+  }
+
+  if (display && !demo) showTime(now());
+
+  handleHttpGet();
+}
+
+RgbColor toRgbColor(const String& s) {
+  char buffer[16];
+  s.toCharArray(buffer, 16);
+  long l = strtol(&buffer[1], NULL, 16);
+  return RgbColor((l >> 16) & 0xFF, (l >> 8) & 0xFF, (l >> 0) & 0xFF);
+}
+
+String toString(const RgbColor& rgb) {
+  long l = (((long) rgb.R) << 16) + (((long) rgb.G) << 8) + (((long) rgb.B) << 0);
+  return String(l, 16);
 }
