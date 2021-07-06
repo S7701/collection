@@ -153,7 +153,7 @@ void expr(int lev) {
       if (t) { *(int *)e = 0xc483; e = e + 2; *++e = t * 4; if (src) { printf("  addl $%d, \%esp\n", t * 4); } } // stack adjust after call
       ty = d[Type];
     }
-    else if (d[Class] == Num) { *++e = 0xb8; *(int *)e = d[Val]; e = e + 4; ty = INT; } // enum identifier
+    else if (d[Class] == Num) { *++e = 0xb8; *(int *)e = d[Val]; e = e + 4; ty = INT; if (src) { printf("  movl $%d, \%eax\n", d[Val]); } // enum identifier
     else { // variable
       if (d[Class] == Loc) { *++e = LEA; *++e = loc - d[Val]; } // local
       else if (d[Class] == Glo) { *++e = IMM; *++e = d[Val]; }  // global

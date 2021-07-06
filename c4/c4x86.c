@@ -258,7 +258,7 @@ void expr(int lev) {
     else if (tk == Mul) { next(); *++e = PUSH; expr(Inc); *++e = MUL; ty = INT; }
     else if (tk == Div) { next(); *++e = PUSH; expr(Inc); *++e = DIV; ty = INT; }
     else if (tk == Mod) { next(); *++e = PUSH; expr(Inc); *++e = MOD; ty = INT; }
-    else if (tk == Inc || tk == Dec) {
+    else if (tk == Inc || tk == Dec) { // post-increment/-decrement
       if (*e == LC) { *e = PUSH; *++e = LC; }
       else if (*e == LI) { *e = PUSH; *++e = LI; }
       else { printf("%d: bad lvalue in post-increment/-decrement (instruction=%d)\n", line, *e); exit(-1); }

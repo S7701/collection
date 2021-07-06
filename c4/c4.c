@@ -103,6 +103,9 @@ void next(void) {
         if ((val = *p++) == '\\') {
           if ((val = *p++) == '0') val = '\0';
           else if (val == 't') val = '\t';
+          else if (val == 'v') val = '\v';
+          else if (val == 'f') val = '\f';
+          else if (val == 'r') val = '\r';
           else if (val == 'n') val = '\n';
         }
         if (tk == '"') *data++ = (char)val;
