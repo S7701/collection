@@ -28,7 +28,7 @@ int *id,      // currently parsed identifier
     *n,       // current node in abstract syntax tree
     *sym,     // symbol table (simple list of identifiers)
     tk,       // current token
-    ival,     // current token value
+    val,      // current token value
     ty,       // current expression type
     line,     // current line number
     src;      // print source and assembly flag
@@ -51,17 +51,17 @@ void next() {
 
   while (tk = *p) {
     ++p;
-    if (tk == '\n') {
+    if (tk == '\n') { // end of line
       if (src) {
         printf("%d: %.*s", line, p - lp, lp);
         lp = p;
       }
       ++line;
     }
-    else if (tk == '#') {
+    else if (tk == '#') { // treat preprocessor lines as line comments
       while (*p != 0 && *p != '\n') ++p;
     }
-    else if ((tk >= 'a' && tk <= 'z') || (tk >= 'A' && tk <= 'Z') || tk == '_') {
+    else if ((tk >= 'a' && tk <= 'z') || (tk >= 'A' && tk <= 'Z') || tk == '_') { // identifier
       pp = p - 1;
       while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_')
         tk = tk * 147 + *p++;
@@ -76,17 +76,17 @@ void next() {
       tk = id[Tk] = Id;
       return;
     }
-    else if (tk >= '0' && tk <= '9') {
-      if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+    else if (tk >= '0' && tk <= '9') { // number
+      if (val = tk - '0') { while (*p >= '0' && *p <= '9') val = val * 10 + *p++ - '0'; }
       else if (*p == 'x' || *p == 'X') {
         while ((tk = *++p) && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F')))
-          ival = ival * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
+          val = val * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
       }
-      else { while (*p >= '0' && *p <= '7') ival = ival * 8 + *p++ - '0'; }
+      else { while (*p >= '0' && *p <= '7') val = val * 8 + *p++ - '0'; }
       tk = Num;
       return;
     }
-    else if (tk == '/') {
+    else if (tk == '/') { // line comment or operator /
       if (*p == '/') {
         ++p;
         while (*p != 0 && *p != '\n') ++p;
@@ -96,37 +96,37 @@ void next() {
         return;
       }
     }
-    else if (tk == '\'' || tk == '"') {
+    else if (tk == '\'' || tk == '"') { // string or character literal
       pp = data;
       while (*p != 0 && *p != tk) {
-        if ((ival = *p++) == '\\') {
-          if ((ival = *p++) == '0') ival = '\0';
-          else if (ival == 't') ival = '\t';
-          else if (ival == 'v') ival = '\v';
-          else if (ival == 'f') ival = '\f';
-          else if (ival == 'r') ival = '\r';
-          else if (ival == 'n') ival = '\n';
+        if ((val = *p++) == '\\') {
+          if ((val = *p++) == '0') val = '\0';
+          else if (val == 't') val = '\t';
+          else if (val == 'v') val = '\v';
+          else if (val == 'f') val = '\f';
+          else if (val == 'r') val = '\r';
+          else if (val == 'n') val = '\n';
         }
-        if (tk == '"') *data++ = (char)ival;
+        if (tk == '"') *data++ = (char)val;
       }
       ++p;
-      if (tk == '"') ival = (int)pp; else tk = Num;
+      if (tk == '"') val = (int)pp; else tk = Num;
       return;
     }
-    else if (tk == '=') { if (*p == '=') { ++p; tk = Eq; } else tk = Assign; return; }
-    else if (tk == '+') { if (*p == '+') { ++p; tk = Inc; } else tk = Add; return; }
-    else if (tk == '-') { if (*p == '-') { ++p; tk = Dec; } else tk = Sub; return; }
-    else if (tk == '!') { if (*p == '=') { ++p; tk = Ne; } return; }
-    else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; }
-    else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; }
-    else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }
-    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }
-    else if (tk == '^') { tk = Xor; return; }
-    else if (tk == '%') { tk = Mod; return; }
-    else if (tk == '*') { tk = Mul; return; }
-    else if (tk == '?') { tk = Cond; return; }
-    else if (tk == '[') { tk = Bracket; return; }
-    else if (tk != ' ' && tk != '\t' && tk != '\v' && tk != '\f' && tk != '\r') return;
+    else if (tk == '=') { if (*p == '=') { ++p; tk = Eq; } else tk = Assign; return; } // operator == or =
+    else if (tk == '+') { if (*p == '+') { ++p; tk = Inc; } else tk = Add; return; }   // operator ++ or +
+    else if (tk == '-') { if (*p == '-') { ++p; tk = Dec; } else tk = Sub; return; }   // operator -- or -
+    else if (tk == '!') { if (*p == '=') { ++p; tk = Ne; } return; }                   // operator != or !
+    else if (tk == '<') { if (*p == '=') { ++p; tk = Le; } else if (*p == '<') { ++p; tk = Shl; } else tk = Lt; return; } // operator <= or << or <
+    else if (tk == '>') { if (*p == '=') { ++p; tk = Ge; } else if (*p == '>') { ++p; tk = Shr; } else tk = Gt; return; } // operator >= or >> or >
+    else if (tk == '|') { if (*p == '|') { ++p; tk = Lor; } else tk = Or; return; }    // operator || or |
+    else if (tk == '&') { if (*p == '&') { ++p; tk = Land; } else tk = And; return; }  // operator && or &
+    else if (tk == '^') { tk = Xor; return; }     // operator ^
+    else if (tk == '%') { tk = Mod; return; }     // operator %
+    else if (tk == '*') { tk = Mul; return; }     // operator *
+    else if (tk == '?') { tk = Cond; return; }    // operator ?
+    else if (tk == '[') { tk = Bracket; return; } // operator []
+    else if (tk != ' ' && tk != '\t' && tk != '\v' && tk != '\f' && tk != '\r') return; // skip whitespaces
   }
 }
 
@@ -134,36 +134,36 @@ void expr(int lev) {
   int t, *d, *b;
 
   if (!tk) { printf("%d: unexpected eof in expression\n", line); exit(-1); }
-  else if (tk == Num) { *--n = ival; *--n = Num; next(); ty = INT; }
-  else if (tk == '"') {
-    *--n = ival; *--n = Num; next();
+  else if (tk == Num) { *--n = val; *--n = Num; next(); ty = INT; } // number or character literal
+  else if (tk == '"') { // string literal
+    *--n = val; *--n = Num; next();
     while (tk == '"') next();
     data = (char *)((int)data + sizeof(int) & -sizeof(int)); ty = PTR;
   }
-  else if (tk == Sizeof) {
-    next(); if (tk == '(') next(); else { printf("%d: open paren expected in sizeof\n", line); exit(-1); }
+  else if (tk == Sizeof) { // sizeof operator
+    next(); if (tk == '(') next(); else { printf("%d: open paren expected in sizeof (tk=%d)\n", line, tk); exit(-1); }
     ty = INT; if (tk == Int) next(); else if (tk == Char) { next(); ty = CHAR; }
     while (tk == Mul) { next(); ty = ty + PTR; }
-    if (tk == ')') next(); else { printf("%d: close paren expected in sizeof\n", line); exit(-1); }
+    if (tk == ')') next(); else { printf("%d: close paren expected in sizeof (tk=%d)\n", line, tk); exit(-1); }
     *--n = (ty == CHAR) ? sizeof(char) : sizeof(int); *--n = Num;
     ty = INT;
   }
-  else if (tk == Id) {
+  else if (tk == Id) { // identifier
     d = id; next();
-    if (tk == '(') {
+    if (tk == '(') { // function call
       if (!d[Class]) {
         memcpy(dsym, (char *)d[Name], d[Hash] & 63); dsym[d[Hash] & 63] = 0;
         if (d[Val] = (int)dlsym(0, dsym)) d[Class] = Fun;
       }
-      if (d[Class] != Fun) { printf("%d: bad function call\n", line); exit(-1); }
+      if (d[Class] != Fun) { printf("%d: bad function call (class=%d)\n", line, d[Class]); exit(-1); }
       next();
       t = 0; b = 0;
-      while (tk != ')') { expr(Assign); *--n = (int)b; b = n; ++t; if (tk == ',') next(); }
+      while (tk != ')') { expr(Assign); *--n = (int)b; b = n; ++t; if (tk == ',') next(); } // parameter
       next();
       *--n = t; *--n = d[Val]; *--n = (int)b; *--n = d[Class];
       ty = d[Type];
     }
-    else if (d[Class] == Num) { *--n = d[Val]; *--n = Num; ty = INT; }
+    else if (d[Class] == Num) { *--n = d[Val]; *--n = Num; ty = INT; } // enum identifier
     else {
       if (d[Class] == Loc) { *--n = d[Val]; *--n = Loc; }
       else if (d[Class] == Glo) { *--n = d[Val]; *--n = Num; }
@@ -171,63 +171,63 @@ void expr(int lev) {
       *--n = ty = d[Type]; *--n = Load;
     }
   }
-  else if (tk == '(') {
+  else if (tk == '(') { // type cast or group
     next();
-    if (tk == Int || tk == Char) {
+    if (tk == Int || tk == Char) { // type cast
       t = (tk == Int) ? INT : CHAR; next();
       while (tk == Mul) { next(); t = t + PTR; }
-      if (tk == ')') next(); else { printf("%d: bad cast\n", line); exit(-1); }
+      if (tk == ')') next(); else { printf("%d: bad cast (tk=%d)\n", line, tk); exit(-1); }
       expr(Inc);
       ty = t;
     }
-    else {
+    else { // group
       expr(Assign);
-      if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
+      if (tk == ')') next(); else { printf("%d: close paren expected (tk=%d)\n", line, tk); exit(-1); }
     }
   }
-  else if (tk == Mul) {
+  else if (tk == Mul) { // unary dereference operator
     next(); expr(Inc);
-    if (ty > INT) ty = ty - PTR; else { printf("%d: bad dereference\n", line); exit(-1); }
+    if (ty > INT) ty = ty - PTR; else { printf("%d: bad dereference (ty=%d)\n", line, ty); exit(-1); }
     *--n = ty; *--n = Load;
   }
-  else if (tk == And) {
+  else if (tk == And) { // unary address of operator
     next(); expr(Inc);
-    if (*n == Load) n = n+2; else { printf("%d: bad address-of\n", line); exit(-1); }
+    if (*n == Load) n = n+2; else { printf("%d: bad address-of (n=%d)\n", line, *n); exit(-1); }
     ty = ty + PTR;
   }
-  else if (tk == '!') {
+  else if (tk == '!') { // logical not operator
     next(); expr(Inc);
     if (*n == Num) n[1] = !n[1]; else { *--n = 0; *--n = Num; --n; *n = (int)(n+3); *--n = Eq; }
     ty = INT;
   }
-  else if (tk == '~') {
+  else if (tk == '~') { // binary not operator
     next(); expr(Inc);
     if (*n == Num) n[1] = ~n[1]; else { *--n = -1; *--n = Num; --n; *n = (int)(n+3); *--n = Xor; }
     ty = INT;
   }
-  else if (tk == Add) { next(); expr(Inc); ty = INT; }
-  else if (tk == Sub) {
+  else if (tk == Add) { next(); expr(Inc); ty = INT; } // unary plus operator
+  else if (tk == Sub) { // unary minus operator
     next(); expr(Inc);
     if (*n == Num) n[1] = -n[1]; else { *--n = -1; *--n = Num; --n; *n = (int)(n+3); *--n = Mul; }
     ty = INT;
   }
-  else if (tk == Inc || tk == Dec) {
+  else if (tk == Inc || tk == Dec) { // pre-increment/-decrement
     t = tk; next(); expr(Inc);
-    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment/-decrement\n", line); exit(-1); }
+    if (*n == Load) *n = t; else { printf("%d: bad lvalue in pre-increment/-decrement (n=%d)\n", line, *n); exit(-1); }
   }
-  else { printf("%d: bad expression\n", line); exit(-1); }
+  else { printf("%d: bad expression (tk=%d)\n", line, tk); exit(-1); }
 
   while (tk >= lev) { // "precedence climbing" or "Top Down Operator Precedence" method
     t = ty; b = n;
     if (tk == Assign) {
       next();
-      if (*n != Load) { printf("%d: bad lvalue in assignment\n", line); exit(-1); }
+      if (*n != Load) { printf("%d: bad lvalue in assignment (n=%d)\n", line, *n); exit(-1); }
       expr(Assign); *--n = (int)(b+2); *--n = ty = t; *--n = Assign;
     }
     else if (tk == Cond) {
       next();
       expr(Assign);
-      if (tk == ':') next(); else { printf("%d: conditional missing colon\n", line); exit(-1); }
+      if (tk == ':') next(); else { printf("%d: conditional missing colon (tk=%d)\n", line, tk); exit(-1); }
       d = n;
       expr(Cond);
       --n; *n = (int)(n+1); *--n = (int)d; *--n = (int)b; *--n = Cond;
@@ -247,7 +247,7 @@ void expr(int lev) {
     else if (tk == Shr) { next(); expr(Add); if (*n==Num && *b==Num) n[1] = b[1] >> n[1]; else { *--n = (int)b; *--n = Shr; } ty = INT; }
     else if (tk == Add) {
       next(); expr(Mul);
-      if ((ty = t) > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } }
+      if ((ty = t) > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } } // add value to int pointer
       if (*n == Num && *b == Num) n[1] = b[1] + n[1]; else { *--n = (int)b; *--n = Add; }
     }
     else if (tk == Sub) {
@@ -259,20 +259,20 @@ void expr(int lev) {
     else if (tk == Div) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] / n[1]; else { *--n = (int)b; *--n = Div; } ty = INT; }
     else if (tk == Mod) { next(); expr(Inc); if (*n==Num && *b==Num) n[1] = b[1] % n[1]; else { *--n = (int)b; *--n = Mod; } ty = INT; }
     else if (tk == Inc || tk == Dec) {
-      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment/-decrement\n", line); exit(-1); }
+      if (*n == Load) *n = tk; else { printf("%d: bad lvalue in post-increment/-decrement (n=%d)\n", line, *n); exit(-1); }
       *--n = (ty > PTR) ? sizeof(int) : sizeof(char); *--n = Num;
       *--n = (int)b; *--n = (tk == Inc) ? Sub : Add;
       next();
     }
     else if (tk == Bracket) {
       next(); expr(Assign);
-      if (tk == ']') next(); else { printf("%d: close bracket expected\n", line); exit(-1); }
+      if (tk == ']') next(); else { printf("%d: close bracket expected (tk=%d)\n", line, tk); exit(-1); }
       if (t > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } }
-      else if (t < PTR) { printf("%d: pointer type expected\n", line); exit(-1); }
+      else if (t < PTR) { printf("%d: pointer type expected (t=%d)\n", line, t); exit(-1); }
       if (*n == Num && *b == Num) n[1] = b[1] + n[1]; else { *--n = (int)b; *--n = Add; }
       *--n = ty = t - PTR; *--n = Load;
     }
-    else { printf("%d: compiler error tk=%d\n", line, tk); exit(-1); }
+    else { printf("%d: compiler error (tk=%d)\n", line, tk); exit(-1); }
   }
 }
 
@@ -281,25 +281,25 @@ void stmt() {
 
   if (tk == If) {
     next();
-    if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
+    if (tk == '(') next(); else { printf("%d: open paren expected (tk=%d)\n", line, tk); exit(-1); }
     expr(Assign); a = n;
-    if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
+    if (tk == ')') next(); else { printf("%d: close paren expected (tk=%d)\n", line, tk); exit(-1); }
     stmt(); b = n;
     if (tk == Else) { next(); stmt(); c = n; } else c = 0;
     *--n = (int)c; *--n = (int)b; *--n = (int)a; *--n = Cond;
   }
   else if (tk == While) {
     next();
-    if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
+    if (tk == '(') next(); else { printf("%d: open paren expected (tk=%d)\n", line, tk); exit(-1); }
     expr(Assign); a = n;
-    if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
+    if (tk == ')') next(); else { printf("%d: close paren expected (tk=%d)\n", line, tk); exit(-1); }
     stmt();
     *--n = (int)a; *--n = While;
   }
   else if (tk == Return) {
     next();
     if (tk != ';') { expr(Assign); a = n; } else a = 0;
-    if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
+    if (tk == ';') next(); else { printf("%d: semicolon expected (tk=%d)\n", line, tk); exit(-1); }
     *--n = (int)a; *--n = Return;
   }
   else if (tk == '{') {
@@ -313,7 +313,7 @@ void stmt() {
   }
   else {
     expr(Assign);
-    if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
+    if (tk == ';') next(); else { printf("%d: semicolon expected (tk=%d)\n", line, tk); exit(-1); }
   }
 }
 
@@ -482,12 +482,12 @@ int main(int argc, char **argv) {
         next();
         i = 0;
         while (tk != '}') {
-          if (tk != Id) { printf("%d: bad enum identifier %d\n", line, tk); return -1; }
+          if (tk != Id) { printf("%d: bad enum identifier (tk=%d)\n", line, tk); return -1; }
           next();
           if (tk == Assign) {
             next();
             n = ast; expr(Cond);
-            if (*n != Num) { printf("%d: bad enum initializer\n", line); return -1; }
+            if (*n != Num) { printf("%d: bad enum initializer (n=%d)\n", line, n); return -1; }
             i = n[1];
           }
           id[Class] = Num; id[Type] = INT; id[Val] = i++;
@@ -499,20 +499,20 @@ int main(int argc, char **argv) {
     while (tk != ';') {
       ty = bt;
       while (tk == Mul) { next(); ty = ty + PTR; }
-      if (tk != Id) { printf("%d: bad global declaration\n", line); return -1; }
-      if (id[Class]) { printf("%d: duplicate global definition\n", line); return -1; }
+      if (tk != Id) { printf("%d: bad global declaration; identifier expected (tk=%d)\n", line, tk); return -1; }
+      if (id[Class]) { printf("%d: duplicate global definition (class=%d)\n", line, id[Class]); return -1; }
       next();
       id[Type] = ty;
       if (tk == '(') { // function
         id[Class] = Fun;
         id[Val] = (int)e;
         next(); i = 2;
-        while (tk != ')') {
+        while (tk != ')') { // parameter
           ty = INT;
           if (tk == Int) next();
           else if (tk == Char) { next(); ty = CHAR; }
           while (tk == Mul) { next(); ty = ty + PTR; }
-          if (tk != Id) { printf("%d: bad parameter declaration\n", line); return -1; }
+          if (tk != Id) { printf("%d: bad parameter declaration; identifier expected (tk=%d)\n", line, tk); return -1; }
           if (id[Class] == Loc) { printf("%d: duplicate parameter definition\n", line); return -1; }
           id[HClass] = id[Class]; id[Class] = Loc;
           id[HType]  = id[Type];  id[Type] = ty;
@@ -521,16 +521,16 @@ int main(int argc, char **argv) {
           if (tk == ',') next();
         }
         next();
-        if (tk != '{') { printf("%d: bad function definition\n", line); return -1; }
+        if (tk != '{') { printf("%d: bad function definition; '{' expected (tk=%d)\n", line, tk); return -1; }
         i = 0;
         next();
-        while (tk == Int || tk == Char) {
+        while (tk == Int || tk == Char) { // locals
           bt = (tk == Int) ? INT : CHAR;
           next();
           while (tk != ';') {
             ty = bt;
             while (tk == Mul) { next(); ty = ty + PTR; }
-            if (tk != Id) { printf("%d: bad local declaration\n", line); return -1; }
+            if (tk != Id) { printf("%d: bad local declaration; identifier expected (tk=%d)\n", line, tk); return -1; }
             if (id[Class] == Loc) { printf("%d: duplicate local definition\n", line); return -1; }
             id[HClass] = id[Class]; id[Class] = Loc;
             id[HType]  = id[Type];  id[Type] = ty;
@@ -553,9 +553,9 @@ int main(int argc, char **argv) {
           }
           id = id + Idsz;
         }
-        tk = ';';
+        tk = ';'; // break inner while loop
       }
-      else {
+      else { // global
         id[Class] = Glo;
         id[Val] = (int)data;
         data = data + sizeof(int);
