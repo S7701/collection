@@ -1,4 +1,3 @@
-#include <String.h>
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
 #include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
 #include <NTPClient.h>    // https://github.com/arduino-libraries/NTPClient
@@ -6,11 +5,16 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
+#define NTP_ADDRESS      "de.pool.ntp.org"  // see ntp.org for ntp pools
+#define NTP_INTERVALL    3607  // seconds = ~1 hour (prime number)
+#define MAX_NTP_RETRIES  24
+
 bool display = true;
 bool demo = false;
-
-#define NTP_ADDRESS   "de.pool.ntp.org"  // see ntp.org for ntp pools
-#define NTP_INTERVALL 3600  // seconds
+time_t ntpTime = 0;
+time_t ntpErrorTime = 0;
+unsigned ntpErrors = 0;
+unsigned ntpRetries = 0;
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -22,14 +26,23 @@ ESP8266WebServer server(80);  // instantiate server at port 80 (http port)
 
 NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, STRIP_PIN);
 
-// RgbColor red(255, 0, 0);
-// RgbColor green(0, 255, 0);
-// RgbColor blue(0, 0, 255);
+RgbColor black(0, 0, 0);
+RgbColor white(255, 255, 255);
 
-RgbColor fgColor(255, 0, 0);
-RgbColor bgColor(0, 0, 0);
-RgbColor white(255);
-RgbColor black(0);
+RgbColor fgColors[] = {
+  RgbColor(255, 0, 0),   // red
+  RgbColor(127, 127, 0), // yellow
+  RgbColor(0, 255, 0),   // green
+  RgbColor(0, 127, 127), // cyan
+  RgbColor(0, 0, 255),   // blue
+  RgbColor(127, 0, 127)  // magenta
+};
+const unsigned fgColorCount = sizeof fgColors / sizeof fgColors[0];
+
+unsigned fgColorFirstWord = 0; // index in color table for first word
+unsigned fgColorNextWord = 0;  // index in color table for next word
+
+RgbColor bgColor(0, 0, 0); // black
 
 class Word {
   int from;
@@ -42,7 +55,11 @@ public:
 
   void show() {
     if (from >= 0) {
-      strip.ClearTo(fgColor, from, to);
+      strip.ClearTo(fgColors[fgColorNextWord], from, to);
+
+      // switch to next color in color list
+      if (++fgColorNextWord >= fgColorCount) fgColorNextWord = 0;
+
       Serial.print(txt);
       Serial.print(" ");
     }
@@ -96,12 +113,6 @@ Phrase phrases[] = {
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
-
-#if STRIP_PIN != LED_BUILTIN
-  // turn the builtin LED off by setting the output HIGH
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-#endif
 
   strip.Begin();
   for (int i = 0; i < PIXEL_COUNT; ++i) {
@@ -171,7 +182,7 @@ void loop() {
 
   if (display) {
     switch (state) {
-    case 0: // Show time on wordclock
+    case 0: // Show time on wordclock; update every minute
       showTime(local);
       state = 1;
       break;
@@ -194,6 +205,10 @@ void showTime(time_t local) {
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
 
   Serial.printf("Show time: %d:%02d:%02d, display %s\n", hour(local), minute(local), second(local), display ? "on" : "off");
+
+  // start with next color in color list
+  if (++fgColorFirstWord >= fgColorCount) fgColorFirstWord = 0;
+  fgColorNextWord = fgColorFirstWord;
 
 #if STRIP_PIN == LED_BUILTIN
   // reinitialize LED strip
@@ -222,21 +237,35 @@ void showTime(time_t local) {
 }
 
 time_t getNtpTime() {
-  ntpClient.update();
+  if (!ntpClient.update()) {
+    ++ntpErrors;
+    if (++ntpRetries == MAX_NTP_RETRIES) ESP.restart();
+  } else
+    ntpRetries = 0;
+
   time_t utc = ntpClient.getEpochTime();
 
   // Central European Time (Frankfurt, Paris)
   TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
   TimeChangeRule CET = { "CET ", Last, Sun, Oct, 3, 60 };    // Central European Standard Time
   Timezone tz(CEST, CET);
-  time_t local = tz.toLocal(utc);
+  ntpTime = tz.toLocal(utc);
 
-  Serial.printf("NTP time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
+  if (ntpRetries) ntpErrorTime = ntpTime;
 
-  return local;
+  Serial.printf("NTP time: %d:%02d:%02d\n", hour(ntpTime), minute(ntpTime), second(ntpTime));
+
+  return ntpTime;
 }
 
 void handleHttpGet() {
+  char cur_time[80];
+  char ntp_time[80];
+  char ntp_error_time[80];
+  time_t local = now();
+  sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
+  sprintf(ntp_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
+  sprintf(ntp_error_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpErrorTime), month(ntpErrorTime), year(ntpErrorTime), hour(ntpErrorTime), minute(ntpErrorTime), second(ntpErrorTime));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
@@ -247,6 +276,11 @@ void handleHttpGet() {
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
 
     "<strong>Wortuhr Einstellungen</strong>" \
+
+    "<p>" \
+    "<label>aktuelle Uhrzeit</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"10\" disabled value=\""+ String(cur_time) +"\">" \
+    "</p>" \
 
     "<p>" \
     "<label>Anzeige</label><br>" \
@@ -277,17 +311,69 @@ void handleHttpGet() {
     "</p>" \
 
     "<p>" \
-    "<label>Vordergrundfarbe</label><br>" \
-    "<input type=\"color\" name=\"foreground\" value=\"#";
-  html += toString(fgColor);
+    "<label>Vordergrundfarben</label><br>" \
+    "<input type=\"color\" name=\"fgColor0\" value=\"";
+  html += toString(fgColors[0]);
+  html +=
+    "\">" \
+    "<input type=\"color\" name=\"fgColor1\" value=\"";
+  html += toString(fgColors[1]);
+  html +=
+    "\">" \
+    "<input type=\"color\" name=\"fgColor2\" value=\"";
+  html += toString(fgColors[2]);
+  html +=
+    "\">" \
+    "<input type=\"color\" name=\"fgColor3\" value=\"";
+  html += toString(fgColors[3]);
+  html +=
+    "\">" \
+    "<input type=\"color\" name=\"fgColor4\" value=\"";
+  html += toString(fgColors[4]);
+  html +=
+    "\">" \
+    "<input type=\"color\" name=\"fgColor5\" value=\"";
+  html += toString(fgColors[5]);
   html +=
     "\">" \
     "</p>" \
 
     "<p>" \
     "<label>Hintergrundfarbe</label><br>" \
-    "<input type=\"color\" name=\"background\" value=\"#";
+    "<input type=\"color\" name=\"bgColor\" value=\"";
   html += toString(bgColor);
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<p>" \
+    "<label>letzte NTP Aktualisierung</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_time\" size=\"20\" disabled value=\"";
+  html += ntp_time;
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<p>" \
+    "<label>letzte erfolglose NTP Aktualisierung</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_error_time\" size=\"20\" disabled value=\"";
+  html += ntp_error_time;
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<p>" \
+    "<label>erfolglose NTP Aktualisierungen</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntpErrors\" size=\"5\" disabled value=\"";
+  html += ntpErrors;
+  html +=
+    "\">" \
+    "</p>" \
+
+    "<p>" \
+    "<label>wiederholt erfolglose NTP Aktualisierungen</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntpRetries\" size=\"5\" disabled value=\"";
+  html += ntpRetries;
   html +=
     "\">" \
     "</p>" \
@@ -308,11 +394,26 @@ void handleHttpPost() {
     if (server.arg("demo") == "on") demo = true;
     if (server.arg("demo") == "off") demo = false;
   }
-  if (server.hasArg("foreground")) {
-    fgColor = toRgbColor(server.arg("foreground"));
+  if (server.hasArg("fgColor0")) {
+    fgColors[0] = toRgbColor(server.arg("fgColor0"));
   }
-  if (server.hasArg("background")) {
-    bgColor = toRgbColor(server.arg("background"));
+  if (server.hasArg("fgColor1")) {
+    fgColors[1] = toRgbColor(server.arg("fgColor1"));
+  }
+  if (server.hasArg("fgColor2")) {
+    fgColors[2] = toRgbColor(server.arg("fgColor2"));
+  }
+  if (server.hasArg("fgColor3")) {
+    fgColors[3] = toRgbColor(server.arg("fgColor3"));
+  }
+  if (server.hasArg("fgColor4")) {
+    fgColors[4] = toRgbColor(server.arg("fgColor4"));
+  }
+  if (server.hasArg("fgColor5")) {
+    fgColors[5] = toRgbColor(server.arg("fgColor5"));
+  }
+  if (server.hasArg("bgColor")) {
+    bgColor = toRgbColor(server.arg("bgColor"));
   }
 
   if (!display) {
@@ -346,6 +447,7 @@ RgbColor toRgbColor(const String& s) {
 }
 
 String toString(const RgbColor& rgb) {
-  long l = (((long) rgb.R) << 16) + (((long) rgb.G) << 8) + (((long) rgb.B) << 0);
-  return String(l, 16);
+  char str[8];
+  sprintf(str, "#%02X%02X%02X", rgb.R, rgb.G, rgb.B);
+  return String(str);
 }
