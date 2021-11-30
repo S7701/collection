@@ -147,6 +147,7 @@ void setup() {
   setSyncInterval(NTP_INTERVALL);  // 1 hour
 
   server.on("/", HTTP_GET, handleHttpGet);
+  server.on("/info", HTTP_GET, handleHttpGetInfo);
   server.on("/", HTTP_POST, handleHttpPost);
   server.onNotFound([](){
     server.send(404, "text/plain", "404: Not found");
@@ -329,6 +330,41 @@ void handleHttpGet() {
 */
 
     "<p>" \
+    "<a href=\"/info\">Wortuhr Informationen</a>" \
+    "</p>" \
+
+    "<input type=\"submit\" value=\"Aktualisieren\">" \
+    "</form>" \
+    "</body>" \
+    "</html>";
+  server.send(200, "text/html", html);
+}
+
+void handleHttpGetInfo() {
+  char cur_time[80];
+  char ntp_time[80];
+  char ntp_error_time[80];
+  time_t local = now();
+  sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
+  sprintf(ntp_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
+  sprintf(ntp_error_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpErrorTime), month(ntpErrorTime), year(ntpErrorTime), hour(ntpErrorTime), minute(ntpErrorTime), second(ntpErrorTime));
+  String html =
+    "<!DOCTYPE html>" \
+    "<html>" \
+    "<head>" \
+    "<title>Wortuhr v1.0</title>" \
+    "</head>" \
+    "<body>" \
+    "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
+
+    "<strong>Wortuhr Informationen</strong>" \
+
+    "<p>" \
+    "<label>aktuelle Uhrzeit</label><br>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"10\" disabled value=\""+ String(cur_time) +"\">" \
+    "</p>" \
+
+    "<p>" \
     "<label>letzte NTP Aktualisierung</label><br>" \
     "<input type=\"text\" style=\"text-align:center\" name=\"ntp_time\" size=\"20\" disabled value=\""+ String(ntp_time) +"\">" \
     "</p>" \
@@ -348,7 +384,6 @@ void handleHttpGet() {
     "<input type=\"text\" style=\"text-align:center\" name=\"ntpRetries\" size=\"5\" disabled value=\""+ String(ntpRetries) +"\">" \
     "</p>" \
 
-    "<input type=\"submit\" value=\"Aktualisieren\">" \
     "</form>" \
     "</body>" \
     "</html>";
