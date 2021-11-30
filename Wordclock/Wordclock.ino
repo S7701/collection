@@ -9,6 +9,8 @@
 #define NTP_INTERVALL    3607  // seconds = ~1 hour (prime number)
 #define MAX_NTP_RETRIES  24
 
+#define MAX_BRIGHTNESS 100
+
 bool display = true;
 bool demo = false;
 time_t ntpTime = 0;
@@ -42,7 +44,11 @@ const unsigned fgColorCount = sizeof fgColors / sizeof fgColors[0];
 unsigned fgColorFirstWord = 0; // index in color table for first word
 unsigned fgColorNextWord = 0;  // index in color table for next word
 
+unsigned brightness = MAX_BRIGHTNESS;
+
 RgbColor bgColor(0, 0, 0); // black
+
+void setBrightness(RgbColor& rgb);
 
 class Word {
   int from;
@@ -55,7 +61,9 @@ public:
 
   void show() {
     if (from >= 0) {
-      strip.ClearTo(fgColors[fgColorNextWord], from, to);
+      RgbColor color = fgColors[fgColorNextWord];
+      setBrightness(color);
+      strip.ClearTo(color, from, to);
 
       // switch to next color in color list
       if (++fgColorNextWord >= fgColorCount) fgColorNextWord = 0;
@@ -270,7 +278,7 @@ void handleHttpGet() {
     "<!DOCTYPE html>" \
     "<html>" \
     "<head>" \
-    "<title>Wortuhr</title>" \
+    "<title>Wortuhr v1.0</title>" \
     "</head>" \
     "<body>" \
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
@@ -284,101 +292,63 @@ void handleHttpGet() {
 
     "<p>" \
     "<label>Anzeige</label><br>" \
-    "<input type=\"radio\" name=\"display\" value=\"on\"";
-  html += (display ? " checked" : "");
-  html +=
-    ">" \
+    "<input type=\"radio\" name=\"display\" value=\"on\""+ String(display ? " checked" : "") +">" \
     "<label>ein</label>" \
-    "<input type=\"radio\" name=\"display\" value=\"off\"";
-  html += (display ? "" : " checked");
-  html +=
-    ">" \
+    "<input type=\"radio\" name=\"display\" value=\"off\""+ String(display ? "" : " checked") +">" \
     "<label>aus</label>" \
+    "</p>" \
+
+    "<p>" \
+    "<label>Helligkeit</label><br>" \
+    "<input type=\"range\" name=\"brightness\" min=\"0\" max=\""+ String(MAX_BRIGHTNESS) +"\" step=\"10\" value=\""+ String(brightness) +"\">"
     "</p>" \
 
     "<p>" \
     "<label>Demo</label><br>" \
-    "<input type=\"radio\" name=\"demo\" value=\"on\"";
-  html += (demo ? " checked" : "");
-  html +=
-    ">" \
+    "<input type=\"radio\" name=\"demo\" value=\"on\""+ String(demo ? " checked" : "") +">" \
     "<label>ein</label>" \
-    "<input type=\"radio\" name=\"demo\" value=\"off\"";
-  html += (demo ? "" : " checked");
-  html +=
-    ">" \
+    "<input type=\"radio\" name=\"demo\" value=\"off\""+ String(demo ? "" : " checked") +">" \
     "<label>aus</label>" \
     "</p>" \
 
+/*
     "<p>" \
     "<label>Vordergrundfarben</label><br>" \
-    "<input type=\"color\" name=\"fgColor0\" value=\"";
-  html += toString(fgColors[0]);
-  html +=
-    "\">" \
-    "<input type=\"color\" name=\"fgColor1\" value=\"";
-  html += toString(fgColors[1]);
-  html +=
-    "\">" \
-    "<input type=\"color\" name=\"fgColor2\" value=\"";
-  html += toString(fgColors[2]);
-  html +=
-    "\">" \
-    "<input type=\"color\" name=\"fgColor3\" value=\"";
-  html += toString(fgColors[3]);
-  html +=
-    "\">" \
-    "<input type=\"color\" name=\"fgColor4\" value=\"";
-  html += toString(fgColors[4]);
-  html +=
-    "\">" \
-    "<input type=\"color\" name=\"fgColor5\" value=\"";
-  html += toString(fgColors[5]);
-  html +=
-    "\">" \
+    "<input type=\"color\" name=\"fgColor0\" value=\""+ toString(fgColors[0]) +"\">" \
+    "<input type=\"color\" name=\"fgColor1\" value=\""+ toString(fgColors[1]) +"\">" \
+    "<input type=\"color\" name=\"fgColor2\" value=\""+ toString(fgColors[2]) +"\">" \
+    "<input type=\"color\" name=\"fgColor3\" value=\""+ toString(fgColors[3]) +"\">" \
+    "<input type=\"color\" name=\"fgColor4\" value=\""+ toString(fgColors[4]) +"\">" \
+    "<input type=\"color\" name=\"fgColor5\" value=\""+ toString(fgColors[5]) +"\">" \
     "</p>" \
 
     "<p>" \
     "<label>Hintergrundfarbe</label><br>" \
-    "<input type=\"color\" name=\"bgColor\" value=\"";
-  html += toString(bgColor);
-  html +=
-    "\">" \
+    "<input type=\"color\" name=\"bgColor\" value=\""+ toString(bgColor) +"\">" \
     "</p>" \
+*/
 
     "<p>" \
     "<label>letzte NTP Aktualisierung</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_time\" size=\"20\" disabled value=\"";
-  html += ntp_time;
-  html +=
-    "\">" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_time\" size=\"20\" disabled value=\""+ String(ntp_time) +"\">" \
     "</p>" \
 
     "<p>" \
     "<label>letzte erfolglose NTP Aktualisierung</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_error_time\" size=\"20\" disabled value=\"";
-  html += ntp_error_time;
-  html +=
-    "\">" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_error_time\" size=\"20\" disabled value=\""+ String(ntp_error_time) +"\">" \
     "</p>" \
 
     "<p>" \
     "<label>erfolglose NTP Aktualisierungen</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntpErrors\" size=\"5\" disabled value=\"";
-  html += ntpErrors;
-  html +=
-    "\">" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntpErrors\" size=\"5\" disabled value=\""+ String(ntpErrors) +"\">" \
     "</p>" \
 
     "<p>" \
     "<label>wiederholt erfolglose NTP Aktualisierungen</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntpRetries\" size=\"5\" disabled value=\"";
-  html += ntpRetries;
-  html +=
-    "\">" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"ntpRetries\" size=\"5\" disabled value=\""+ String(ntpRetries) +"\">" \
     "</p>" \
 
-    "<input type=\"submit\" value=\"Senden\">" \
+    "<input type=\"submit\" value=\"Aktualisieren\">" \
     "</form>" \
     "</body>" \
     "</html>";
@@ -415,6 +385,10 @@ void handleHttpPost() {
   if (server.hasArg("bgColor")) {
     bgColor = toRgbColor(server.arg("bgColor"));
   }
+  if (server.hasArg("brightness")) {
+    brightness = toUnsigned(server.arg("brightness"));
+    if (brightness > MAX_BRIGHTNESS) brightness = MAX_BRIGHTNESS;
+  }
 
   if (!display) {
 #if STRIP_PIN == LED_BUILTIN
@@ -442,12 +416,26 @@ void handleHttpPost() {
 RgbColor toRgbColor(const String& s) {
   char buffer[16];
   s.toCharArray(buffer, 16);
-  long l = strtol(&buffer[1], NULL, 16);
+  long l = strtol(&buffer[1], NULL, 16); // skip leading #
   return RgbColor((l >> 16) & 0xFF, (l >> 8) & 0xFF, (l >> 0) & 0xFF);
+}
+
+unsigned toUnsigned(const String& s) {
+  char buffer[16];
+  s.toCharArray(buffer, 16);
+  long l = strtol(buffer, NULL, 10);
+  return (unsigned) l;
 }
 
 String toString(const RgbColor& rgb) {
   char str[8];
   sprintf(str, "#%02X%02X%02X", rgb.R, rgb.G, rgb.B);
   return String(str);
+}
+
+void setBrightness(RgbColor& rgb) {
+  if (brightness >= MAX_BRIGHTNESS) return;
+  rgb.R = rgb.R * brightness / MAX_BRIGHTNESS;
+  rgb.G = rgb.G * brightness / MAX_BRIGHTNESS;
+  rgb.B = rgb.B* brightness / MAX_BRIGHTNESS;
 }
