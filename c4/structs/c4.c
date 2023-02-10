@@ -55,13 +55,13 @@ enum Token { Num = 128, Fun, Sys, Glo, Loc, Id,
              Assign, Cond, Lor, Land, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Dot, Arrow, Bracket };
 
 // opcodes
-enum Opcode { LEA, IMM, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH, 
+enum Opcode { IMM, LEA, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
               OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD, 
               OPEN, READ, WRITE, CLOSE, PRINTF, MALLOC, FREE, MEMSET, MEMCPY, MEMCMP, EXIT };
 
 // types
-enum Ty { CHAR, INT, PTR = 256, PTR2 = 512 };
-       
+enum Type { CHAR, INT, PTR = 256, PTR2 = 512 };
+
 void next() {
   char *pp; // previous position
 
@@ -72,8 +72,8 @@ void next() {
         printf("%d: %.*s", line, p - lp, lp);
         lp = p;
         while (le < e) {
-          printf("    %.8s", &ops[*++le * 8]);
-          if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
+          printf("    %s", &ops[*++le * 8]);
+          if (*le <= ADJ) { ++le; printf(" %d (0x%08X)\n", *le, *le); } else printf("\n");
         }
       }
       ++line;
@@ -387,12 +387,13 @@ int main(int argc, char **argv) {
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
+  memset(sp,   0, poolsz);
   memset(tsize,  0, PTR * sizeof(int));
   memset(members, 0, PTR * sizeof(struct member_s *));
-  
-  ops = "LEA     IMM     JMP     JSR     BZ      BNZ     ENTER   ADJ     LEAVE   LI      LC      SI      SC      PUSH    "
-        "OR      XOR     AND     EQ      NE      LT      GT      LE      GE      SHL     SHR     ADD     SUB     MUL     DIV     MOD     "
-        "OPEN    READ    WRITE   CLOSE   PRINTF  MALLOC  FREE    MEMSET  MEMCPY  MEMCMP  EXIT    ";
+
+  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
+        "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
+        "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCPY\0 MEMCMP\0 EXIT\0   ";
 
   p = "char else enum if int return sizeof struct while "
       "open read write close printf malloc free memset memcpy memcmp exit "
@@ -587,11 +588,11 @@ int main(int argc, char **argv) {
   while (1) {
     i = *pc++; ++cycle;
     if (debug) {
-      printf("%d> %.8s", cycle, &ops[i * 8]);
-      if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
+      printf("%d> %s", cycle, &ops[i * 8]);
+      if (i <= ADJ) printf(" %d (0x%08X)\n", *pc, *pc); else printf("\n");
     }
-    if      (i == LEA)   a = (int)(bp + *pc++);                             // load local address
-    else if (i == IMM)   a = *pc++;                                         // load global address or immediate
+    if      (i == IMM)   a = *pc++;                                         // load global address or immediate
+    else if (i == LEA)   a = (int)(bp + *pc++);                             // load local address
     else if (i == JMP)   pc = (int *)*pc;                                   // jump
     else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
     else if (i == BZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
@@ -626,7 +627,10 @@ int main(int argc, char **argv) {
     else if (i == READ)   a = read(sp[2], (char *)sp[1], *sp);
     else if (i == WRITE)  a = write(sp[2], (char *)sp[1], *sp);
     else if (i == CLOSE)  a = close(*sp);
-    else if (i == PRINTF) { t = sp + pc[1]; a = printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]); }
+    else if (i == PRINTF) {
+      if (*pc == ADJ) t = sp + pc[1]; else { printf("bad instruction sequence; expected ADJ after PRINTF (instruction=%d)\n", *pc); return -1; }
+      a = printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]);
+    }
     else if (i == MALLOC) a = (int)malloc(*sp);
     else if (i == FREE)   free((void *)(a = *sp));
     else if (i == MEMSET) a = (int)memset((char *)sp[2], sp[1], *sp);
@@ -635,4 +639,5 @@ int main(int argc, char **argv) {
     else if (i == EXIT)   { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction %d! cycle = %d\n", i, cycle); return -1; }
   }
+  return -1;
 }

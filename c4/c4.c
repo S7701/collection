@@ -43,7 +43,7 @@ enum Type { CHAR, INT, PTR };
 // identifier offsets (since we can't create an ident struct)
 enum Identifier { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
 
-void next(void) {
+void next() {
   char *pp; // previous position
 
   while (tk = *p) {
@@ -280,7 +280,7 @@ void expr(int lev) {
   }
 }
 
-void stmt(void) {
+void stmt() {
   int *a, *b;
 
   if (tk == If) {
@@ -401,7 +401,7 @@ int main(int argc, char **argv) {
       ty = bt;
       while (tk == Mul) { next(); ty = ty + PTR; }
       if (tk != Id) { printf("%d: bad global declaration; identifier expected (tk=%d)\n", line, tk); return -1; }
-      if (id[Class]) { printf("%d: duplicate global definition (name=%s, class=%d)\n", line, (char *)id[Name], id[Class]); return -1; }
+      if (id[Class]) { printf("%d: duplicate global definition (class=%d)\n", line, id[Class]); return -1; }
       next();
       id[Type] = ty;
       if (tk == '(') { // function
