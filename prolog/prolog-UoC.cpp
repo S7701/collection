@@ -73,20 +73,20 @@ private:
 class Variable : public Term {
 private:
   Term *instance;
-  const char *varname;
-  int varno;
+  const char *name;
+  int id;
 private:
-  static int varcount;
+  static int count;
 public:
-  Variable(const char *n = NULL) : instance(NULL), varname(n), varno(++varcount) {}
-  const char *name() const { return varname; }
+  Variable(const char *n = NULL) : instance(NULL), name(n), id(++count) {}
+  const char *name() const { return name; }
   void print() {
     if (instance != NULL)
       instance->print();
     else {
-      if (varname != NULL)
-        cout << varname;
-      cout << "#" << varno;
+      if (name != NULL)
+        cout << name;
+      cout << "#" << id;
     }
   };
   bool unify(Term *t);
@@ -95,7 +95,8 @@ public:
 private:
   bool unify2(CompoundTerm *t) { return this->unify(t); }
 };
-int Variable::varcount = 0;
+
+int Variable::count = 0;
 
 class Trail {
 private:
@@ -112,6 +113,7 @@ public:
       top->var->reset();
   }
 };
+
 Trail *Trail::top = NULL;
 
 bool Variable::unify(Term *t) {
@@ -120,11 +122,12 @@ bool Variable::unify(Term *t) {
   instance = t;
   return true;
 }
+
 Term *Variable::copy() {
   if (instance == NULL)
   {
     Trail::Push(this);
-    instance = new Variable(/*varname?*/);
+    instance = new Variable(/*name?*/);
   }
   return instance;
 }
