@@ -30,19 +30,21 @@ public:
 
 class Atom: public Term { // name.
 private:
-  string name;
+  string txt;
 public:
-  Atom(const string &n): name(n) {}
-  void print() const { cout << name; }
+  Atom(const string &s): txt(s) {}
+  const string &getTxt() const { return txt; }
+  void print() const { cout << txt; }
   bool unify(Term *t) { return t->unifyAtom(this); }
   virtual bool unifyAtom(Atom *a) {
-    if (name == a->name)
+    if (txt == a->txt)
       return true;
     return false;
   }
-  bool operator ==(Atom* other) { return name == other->name; }
-  const string &getName() const { return name; }
+  bool operator == (Atom* other) { return txt == other->txt; }
 };
+
+Atom textless("");
 
 class CompoundTerm: public Term { // functor(arg0, arg1 ... argN).
 private:
@@ -51,7 +53,7 @@ private:
   list<Term*> args;
 public:
   CompoundTerm(Atom *f): functor(f), arity(0) {}
-  void add(Term *arg) { args.push_back(arg); ++arity; }
+  void addArg(Term *arg) { args.push_back(arg); ++arity; }
   void print() const {
     functor->print();
     cout << "(";
@@ -92,17 +94,17 @@ private:
   unsigned int id;
   Term *term;
 public:
-  Variable(): name(NULL), id(count++), term(NULL) {}
-  Variable(Atom *n): name(n), id(count++), term(NULL) {}
-  const string &getName() const { return name->getName(); }
+  Variable(): name(&textless), id(++count), term(NULL) {}
+  Variable(Atom *n): name(n), id(++count), term(NULL) {}
+  const string &getName() const { return name->getTxt(); }
   void print() const {
-    const string &n = name->getName();
+    const string &n = name->getTxt();
     if (term != NULL)
       term->print();
     else if (!n.empty())
-      cout << "?" << n;
+      cout << "?" << n << "#" << id;
     else
-      cout << "?" << id;
+      cout << "#" << id;
   };
   bool unify(Term *t) {
     if (term != NULL)
@@ -120,22 +122,22 @@ public:
 unsigned int Variable::count = 0;
 list<Variable*> Variable::trail;
 
-class Clause { // head :- body
+class Clause { // head :- goals
 private:
   Term *head;
-  list<Term*> body; // empty for facts
+  list<Term*> goals; // empty for facts
 public:
   Clause(Term *h) : head(h) {}
   Term *getHead() const { return head; }
-  list<Term*> &getBody() { return body; }
-  void add(Term *t) { body.push_back(t); }
+  list<Term*> &getGoals() { return goals; }
+  void addGoal(Term *t) { goals.push_back(t); }
   void print() const {
     head->print();
     cout << " :- ";
-    if (body.empty())
+    if (goals.empty())
       cout << "true";
     else
-      Term::Print(body, "; ");
+      Term::Print(goals, ", ");
   }
 };
 
@@ -167,26 +169,28 @@ public:
         cout << "\n";
       }
       if (q->unify(head)) {
-        list<Term*> &body = c->getBody();
-        if (body.empty()) {
+        if (debug) {
+          indent(level);
+          cout << "  match\n";
+        }
+        list<Term*> &goals = c->getGoals();
+        if (goals.empty()) {
           solved = true;
-          if (debug) {
-            indent(level);
-            cout << "  match\n";
-          }
           if (vl.empty()) {
             if (level == 0)
               cout << "true";
           }
-          else for (auto it = vl.begin(); it != vl.end(); ++it) {
-            if (it != vl.begin()) cout << ", ";
-            Variable* v = (*it);
-            cout << v->getName() << " = ";
-            v->print();
+          else {
+            for (auto it = vl.begin(); it != vl.end(); ++it) {
+              Variable* v = (*it);
+              cout << v->getName() << " = ";
+              v->print();
+              cout << "\n";
+            }
+            cout << "\n";
           }
-          cout << "\n";
         }
-        else if(solve(body, vl, level+1))
+        else if(solve(goals, vl, level+1))
           solved = true;
       }
       else if (debug) {
@@ -203,7 +207,7 @@ public:
     bool solved = false;
     indent(level);
     cout << "solve@"  << level << ": ";
-    Term::Print(ql, "; ");
+    Term::Print(ql, ", ");
     cout << "\n";
     for (auto it = ql.begin(); it != ql.end(); ++it) {
       Term* q = (*it);
@@ -239,7 +243,7 @@ int main(int argc, const char* const argv[]) {
   Atom *aChild = new Atom("child");
   Atom *aParent = new Atom("parent");
   Atom *aGrandparent = new Atom("grandparent");
-  Atom *a = new Atom("");
+  Atom *aX = new Atom("x");
 
   Program *p = new Program();
   Clause *c;
@@ -250,93 +254,93 @@ int main(int argc, const char* const argv[]) {
   // Facts:
 
   // child-parent(Mike, Gerd).
-  ct = new CompoundTerm(aChildParent); ct->add(aMike); ct->add(aGerd);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aMike); ct->addArg(aGerd);
   p->addClause(new Clause(ct));
 
   // child-parent(Mike, Laura).
-  ct = new CompoundTerm(aChildParent); ct->add(aMike); ct->add(aLaura);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aMike); ct->addArg(aLaura);
   p->addClause(new Clause(ct));
 
   // child-parent(Nicki, Karl-Heinz).
-  ct = new CompoundTerm(aChildParent); ct->add(aNicki); ct->add(aKH);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aNicki); ct->addArg(aKH);
   p->addClause(new Clause(ct));
 
   // child-parent(Nicki, Doris).
-  ct = new CompoundTerm(aChildParent); ct->add(aNicki); ct->add(aDoris);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aNicki); ct->addArg(aDoris);
   p->addClause(new Clause(ct));
 
   // child-parent(Nico, Mike).
-  ct = new CompoundTerm(aChildParent); ct->add(aNico); ct->add(aMike);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aNico); ct->addArg(aMike);
   p->addClause(new Clause(ct));
 
   // child-parent(Luca, Mike).
-  ct = new CompoundTerm(aChildParent); ct->add(aLuca); ct->add(aMike);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aLuca); ct->addArg(aMike);
   p->addClause(new Clause(ct));
 
   // child-parent(Nico, Nicki).
-  ct = new CompoundTerm(aChildParent); ct->add(aNico); ct->add(aNicki);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aNico); ct->addArg(aNicki);
   p->addClause(new Clause(ct));
 
   // child-parent(Luca, Nicki).
-  ct = new CompoundTerm(aChildParent); ct->add(aLuca); ct->add(aNicki);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aLuca); ct->addArg(aNicki);
   p->addClause(new Clause(ct));
 
   // Rules:
 
-  // grandchild-grandparent(?grandchild, ?grandparent) :- child-parent(?grandchild, ?), child-parent(?, ?grandparent).
+  // grandchild-grandparent(?grandchild, ?grandparent) :- child-parent(?grandchild, ?x), child-parent(?x, ?grandparent).
   v1 = new Variable(aGrandchild);
   v2 = new Variable(aGrandparent);
-  v3 = new Variable(a);
-  ct = new CompoundTerm(aGrandchildGrandparent); ct->add(v1); ct->add(v2);
+  v3 = new Variable(aX);
+  ct = new CompoundTerm(aGrandchildGrandparent); ct->addArg(v1); ct->addArg(v2);
   c = new Clause(ct);
-  ct = new CompoundTerm(aChildParent); ct->add(v1); ct->add(v3);
-  c->add(ct);
-  ct = new CompoundTerm(aChildParent); ct->add(v3); ct->add(v2);
-  c->add(ct);
+  ct = new CompoundTerm(aChildParent); ct->addArg(v1); ct->addArg(v3);
+  c->addGoal(ct);
+  ct = new CompoundTerm(aChildParent); ct->addArg(v3); ct->addArg(v2);
+  c->addGoal(ct);
   p->addClause(c);
 
   // Queries:
 
   vl.clear();
   cout << "?- child-parent(?child, Nicki).\n";
-  v1 = new Variable(aChild);
-  ct = new CompoundTerm(aChildParent); ct->add(v1); ct->add(aNicki);
-  vl.push_back(v1); p->solve(ct, vl);
+  v1 = new Variable(aChild); vl.push_back(v1);
+  ct = new CompoundTerm(aChildParent); ct->addArg(v1); ct->addArg(aNicki);
+  p->solve(ct, vl);
 
   vl.clear();
   cout << "\n?- child-parent(?child, Luca).\n";
-  v1 = new Variable(aChild);
-  ct = new CompoundTerm(aChildParent); ct->add(v1); ct->add(aLuca);
-  vl.push_back(v1); p->solve(ct, vl);
+  v1 = new Variable(aChild); vl.push_back(v1);
+  ct = new CompoundTerm(aChildParent); ct->addArg(v1); ct->addArg(aLuca);
+  p->solve(ct, vl);
 
   vl.clear();
   cout << "\n?- child-parent(?child, ?parent).\n";
-  v1 = new Variable(aChild);
-  v2 = new Variable(aParent);
-  ct = new CompoundTerm(aChildParent); ct->add(v1); ct->add(v2);
-  vl.push_back(v1); vl.push_back(v2); p->solve(ct, vl);
+  v1 = new Variable(aChild); vl.push_back(v1);
+  v2 = new Variable(aParent); vl.push_back(v2);
+  ct = new CompoundTerm(aChildParent); ct->addArg(v1); ct->addArg(v2);
+  p->solve(ct, vl);
 
   cout << "\n?- child-parent(Nico, Mike).\n";
   vl.clear();
-  ct = new CompoundTerm(aChildParent); ct->add(aNico); ct->add(aMike);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aNico); ct->addArg(aMike);
   p->solve(ct, vl);
 
   cout << "\n?- child-parent(Luca, Gerd).\n";
   vl.clear();
-  ct = new CompoundTerm(aChildParent); ct->add(aLuca); ct->add(aGerd);
+  ct = new CompoundTerm(aChildParent); ct->addArg(aLuca); ct->addArg(aGerd);
   p->solve(ct, vl);
 
   cout << "\n?- grandchild-grandparent(Luca, Gerd).\n";
   vl.clear();
-  ct = new CompoundTerm(aGrandchildGrandparent); ct->add(aLuca); ct->add(aGerd);
+  ct = new CompoundTerm(aGrandchildGrandparent); ct->addArg(aLuca); ct->addArg(aGerd);
   p->solve(ct, vl);
 
   vl.clear();
   cout << "\n?- grandchild-grandparent(?grandchild, ?grandparent).\n";
-  v1 = new Variable(aGrandchild);
-  v2 = new Variable(aGrandparent);
-  ct = new CompoundTerm(aGrandchildGrandparent); ct->add(v1); ct->add(v2);
-  vl.push_back(v1); vl.push_back(v2); p->solve(ct, vl);
+  v1 = new Variable(aGrandchild); vl.push_back(v1);
+  v2 = new Variable(aGrandparent); vl.push_back(v2);
+  ct = new CompoundTerm(aGrandchildGrandparent); ct->addArg(v1); ct->addArg(v2);
+  p->solve(ct, vl);
 
   return 0;
 }
