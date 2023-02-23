@@ -3,12 +3,11 @@
 // Copyright (c) Alan Mycroft, University of Cambridge, 2000.
 
 #include <iostream>
-#include <cstring>
+#include <string>
 
 using namespace std;
 
-bool debug_solve(true);
-bool debug_copy(false);
+bool debug = true;
 
 void indent(int n) {
   for (int i = 0; i < n; ++i) cout << "    ";
@@ -26,14 +25,14 @@ public:
 
 class CompoundTerm : public Term {
 private:
-    const char *fsym;
+    string fsym;
     int arity;
     Term **args;
 public:
-  CompoundTerm(const char *f) : fsym(f), arity(0), args(NULL) {}
-  CompoundTerm(const char *f, Term *a1) : fsym(f), arity(1), args(new Term*[1]) { args[0] = a1; };
-  CompoundTerm(const char *f, Term *a1, Term *a2) : fsym(f), arity(2), args(new Term*[2]) { args[0] = a1, args[1] = a2; };
-  CompoundTerm(const char *f, Term *a1, Term *a2, Term *a3) : fsym(f), arity(3), args(new Term*[3]) { args[0] = a1, args[1] = a2, args[2] = a3; };
+  CompoundTerm(const string &f) : fsym(f), arity(0), args(NULL) {}
+  CompoundTerm(const string &f, Term *a1) : fsym(f), arity(1), args(new Term*[1]) { args[0] = a1; };
+  CompoundTerm(const string &f, Term *a1, Term *a2) : fsym(f), arity(2), args(new Term*[2]) { args[0] = a1, args[1] = a2; };
+  CompoundTerm(const string &f, Term *a1, Term *a2, Term *a3) : fsym(f), arity(3), args(new Term*[3]) { args[0] = a1, args[1] = a2, args[2] = a3; };
   void print() {
     cout << fsym;
     if (arity > 0) {
@@ -46,14 +45,8 @@ public:
     }
   }
   bool unify(Term *t) { return t->unify2(this); }
-  Term *copy() {
-    if (debug_copy) { cout << "  CompoundTerm::copy()" << endl; }
-    return copy2();
-  }
-  CompoundTerm *copy2() {
-    if (debug_copy) { cout << "  CompoundTerm::copy2()" << endl; }
-    return new CompoundTerm(this);
-  }
+  Term *copy() { return copy2(); }
+  CompoundTerm *copy2() { return new CompoundTerm(this); }
 private:
   CompoundTerm(CompoundTerm *other)
   : fsym(other->fsym), arity(other->arity), args(other->arity ? new Term*[other->arity] : NULL) {
@@ -73,13 +66,14 @@ private:
 class Variable : public Term {
 private:
   Term *instance;
-  const char *varname;
+  string varname;
   int id;
 private:
   static int count;
 public:
-  Variable(const char *n = "") : instance(NULL), varname(n), id(++count) {}
-  const char *name() const { return varname; }
+  Variable() : instance(NULL), varname(""), id(++count) {}
+  Variable(const string &n) : instance(NULL), varname(n), id(++count) {}
+  const string &name() const { return varname; }
   void print() {
     if (instance)
       instance->print();
@@ -89,7 +83,7 @@ public:
   };
   bool unify(Term *t);
   Term *copy();
-  void reset() { instance = NULL; }
+  void reset() { if (debug) { cout << "  reset: "; print(); cout << endl; } instance = NULL; }
 private:
   bool unify2(CompoundTerm *t) { return this->unify(t); }
 };
@@ -122,7 +116,6 @@ bool Variable::unify(Term *t) {
 }
 
 Term *Variable::copy() {
-  if (debug_copy) { cout << "  Variable::copy()" << endl; }
   if (!instance) {
     Trail::Push(this);
     instance = new Variable(varname);
@@ -138,14 +131,8 @@ private:
   Goal *next;
 public:
   Goal(CompoundTerm *h, Goal *t = NULL) : term(h), next(t) {}
-  Goal *copy() {
-    if (debug_copy) { cout << "  Goal::copy()" << endl; }
-    return new Goal(term->copy2(), next ? next->copy() : NULL);
-  }
-  Goal *append(Goal *l) {
-    if (debug_copy) { cout << "  Goal::append()" << endl; }
-    return new Goal(term, next ? next->append(l) : NULL);
-  }
+  Goal *copy() { return new Goal(term->copy2(), next ? next->copy() : NULL); }
+  Goal *append(Goal *l) { return new Goal(term, next ? next->append(l) : NULL); }
   void print() {
     term->print();
     if (next) {
@@ -161,10 +148,7 @@ public:
   CompoundTerm *head;
   Goal *body;
   Clause(CompoundTerm *h, Goal *b = NULL) : head(h), body(b) {}
-  Clause *copy() {
-    if (debug_copy) { cout << "  Clause::copy()" << endl; }
-    return new Clause(head->copy2(), body ? body->copy() : NULL);
-  }
+  Clause *copy() { return new Clause(head->copy2(), body ? body->copy() : NULL); }
   void print() {
     head->print();
     cout << " :- ";
@@ -182,17 +166,16 @@ public:
   Program(Clause *c, Program *n = NULL) : clause(c), next(n) {}
 };
 
-int Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int level)
-{
+int Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int level) {
   int solved = 0;
-  if (debug_solve) { indent(level); cout << "solve@"  << level << ": "; this->print(); cout << endl; }
+  if (debug) { indent(level); cout << "solve@"  << level << ": "; this->print(); cout << endl; }
   for (Program *q = p; q != NULL; q = q->next) { 
     Trail *t = Trail::Top();
     Clause *c = q->clause->copy();
     Trail::Undo(t);
-    if (debug_solve) { indent(level); cout << "  try: "; c->print(); cout << endl; }
+    if (debug) { indent(level); cout << "  try: "; c->print(); cout << endl; }
     if (term->unify(c->head)) {
-      if (debug_solve) { indent(level); cout << "  match." << endl; }
+      if (debug) { indent(level); cout << "  MATCH" << endl; }
       Goal *g = c->body ? c->body->append(next) : next;
       if (g) {
         solved += g->solve(p, vars, numvars, level + 1);
@@ -210,13 +193,16 @@ int Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int
       }
     }
     else {
-      if (debug_solve) { indent(level); cout << "  no match." << endl; }
+      if (debug) { indent(level); cout << "  no match" << endl; }
     }
     Trail::Undo(t);
   }
   if (level == 0) {
-    if (solved)
-      cout << "true: " << solved << " solutions" << endl;
+    if (solved) {
+      cout << "true";
+      if (solved > 1) cout << " (" << solved << " solutions)";
+      cout << endl;
+    }
     else
       cout << "false" << endl;
   }
@@ -226,8 +212,8 @@ int Goal::solve(Program *p, Variable *vars[], unsigned int numvars, unsigned int
 void original_sample_test_program() {
   /* A sample test program: append */
 
-  const char *a_append = "append";
-  const char *a_pair = "pair";
+  string a_append = "append";
+  string a_pair = "pair";
   CompoundTerm *f_nil = new CompoundTerm("nil");
   CompoundTerm *f_1 = new CompoundTerm("1");
   CompoundTerm *f_2 = new CompoundTerm("2");
@@ -266,8 +252,8 @@ void original_sample_test_program() {
 }
 
 void sample_test_program() {
-  const char *a_grandparent_grandchild = "grandparent-grandchild";
-  const char *a_parent_child = "parent-child";
+  string a_grandparent_grandchild = "grandparent-grandchild";
+  string a_parent_child = "parent-child";
   CompoundTerm *f_fathers_father = new CompoundTerm("fathers-father");
   CompoundTerm *f_fathers_mother = new CompoundTerm("fathers-mother");
   CompoundTerm *f_mothers_father = new CompoundTerm("mothers-father");
