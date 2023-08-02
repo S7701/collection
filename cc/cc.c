@@ -73,7 +73,7 @@ void next() {
       tk = (tk << 6) + (p - pp);
       id = sym;
       while (id[Tk]) {
-        if (tk == id[Hash] && !memcmp((char *)id[Name], pp, p - pp)) { tk = id[Tk]; return; }
+        if (tk == id[Hash] && !memcmp((char*)id[Name], pp, p - pp)) { tk = id[Tk]; return; }
         id = id + Idsz;
       }
       id[Name] = (int)pp;
@@ -161,7 +161,7 @@ void expr(int lev) {
     next(); // skip string literal
     while (tk == '"')
       next(); // concatenate string literals
-    d = (char *)((int)d + sizeof (int) & -sizeof (int)); // align data pointer
+    d = (char*)((int)d + sizeof (int) & -sizeof (int)); // align data pointer
     ty = PTR; // char pointer
   }
   else if (tk == Sizeof) { // sizeof operator
@@ -488,7 +488,7 @@ int main(int argc, char **argv) {
     bt = INT; // basetype
     if (tk == Int) next();
     else if (tk == Char) { next(); bt = CHAR; }
-    else if (tk == Enum) {
+    else if (tk == Enum) { // enum declaration
       next(); // skip "enum"
       if (tk != '{') { printf("%ld: bad enum declaration; '{' expected (tk=%ld)\n", line, tk); return -1; }
       next(); // skip '{'
@@ -519,7 +519,7 @@ int main(int argc, char **argv) {
         ty = ty + PTR;
       }
       if (tk != Id) { printf("%ld: bad global declaration; identifier expected (tk=%ld)\n", line, tk); return -1; }
-      if (id[Class]) { printf("%ld: duplicate global definition (class=%ld)\n", line, id[Class]); return -1; }
+      if (id[Class]) { printf("%ld: duplicate global declaration (class=%ld)\n", line, id[Class]); return -1; }
       id[Type] = ty;
       next();
       if (tk == '(') { // function declaration
@@ -537,7 +537,7 @@ int main(int argc, char **argv) {
             ty = ty + PTR;
           }
           if (tk != Id) { printf("%ld: bad parameter declaration; identifier expected (tk=%ld)\n", line, tk); return -1; }
-          if (id[Class] == Local) { printf("%ld: duplicate parameter definition\n", line); return -1; }
+          if (id[Class] == Local) { printf("%ld: duplicate parameter declaration\n", line); return -1; }
           id[HClass] = id[Class];
           id[Class] = Local;
           id[HType] = id[Type];
@@ -549,7 +549,7 @@ int main(int argc, char **argv) {
           else if (tk != ')') { printf("%ld: bad function declaration; ',' or '}' expected (tk=%ld)\n", line, tk); return -1; }
         }
         next(); // skip ')'
-        if (tk != '{') { printf("%ld: bad function definition; '{' expected (tk=%ld)\n", line, tk); return -1; }
+        if (tk != '{') { printf("%ld: bad function declaration; '{' expected (tk=%ld)\n", line, tk); return -1; }
         next();
         loc = ++i;
         while (tk == Int || tk == Char) { // local variable declarations
@@ -562,7 +562,7 @@ int main(int argc, char **argv) {
               ty = ty + PTR;
             }
             if (tk != Id) { printf("%ld: bad local declaration; identifier expected (tk=%ld)\n", line, tk); return -1; }
-            if (id[Class] == Local) { *p = '\0'; printf("%ld: duplicate local definition\n", line); return -1; }
+            if (id[Class] == Local) { *p = '\0'; printf("%ld: duplicate local declaration\n", line); return -1; }
             id[HClass] = id[Class];
             id[Class] = Local;
             id[HType] = id[Type];
@@ -571,7 +571,7 @@ int main(int argc, char **argv) {
             id[Val] = ++i;
             next();
             if (tk == ',') next();
-            else if (tk != ';') { printf("%ld: bad local definition; ',' or '}' expected (tk=%ld)\n", line, tk); return -1; }
+            else if (tk != ';') { printf("%ld: bad local declaration; ',' or ';' expected (tk=%ld)\n", line, tk); return -1; }
           }
           next(); // skip ';'
         }
@@ -603,7 +603,7 @@ int main(int argc, char **argv) {
     next(); // skip ';'
   }
 
-  pc = (int *)idmain[Val];
+  pc = (int*)idmain[Val];
   if (!pc) { printf("main() not defined\n"); return -1; }
   if (src) return 0;
 
@@ -612,7 +612,7 @@ int main(int argc, char **argv) {
   pp = e;
   *++e = EXIT;
   // setup stack
-  bp = sp = (int *)((int)sp + poolsz);
+  bp = sp = (int*)((int)sp + poolsz);
   *--sp = argc;
   *--sp = (int)argv;
   *--sp = (int)pp;
@@ -629,21 +629,21 @@ int main(int argc, char **argv) {
       else printf("\n");
     }
 
-    if      (i == IMM)   a = *pc++;                                         // load global address or immediate
-    else if (i == LEA)   a = (int)(bp + *pc++);                             // load local address
-    else if (i == JMP)   pc = (int *)*pc;                                   // jump
-    else if (i == BZ)    pc = a ? pc + 1 : (int *)*pc;                      // branch if zero
-    else if (i == BNZ)   pc = a ? (int *)*pc : pc + 1;                      // branch if not zero
-    else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int *)*pc; }        // jump to subroutine
-    else if (i == ADJ)   sp = sp + *pc++;                                   // stack adjust
-    else if (i == ENTER) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }     // enter subroutine
-    else if (i == LEAVE) { sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; } // leave subroutine
-    else if (i == LI)    a = *(int *)a;                                     // load int
-    else if (i == LC)    a = *(char *)a;                                    // load char
-    else if (i == SI)    *(int *)*sp++ = a;                                 // store int
-    else if (i == SC)    a = *(char *)*sp++ = (char)a;                      // store char
-    else if (i == PUSH)  *--sp = a;                                         // push
-    else if (i == SWAP)  { i = *sp; *sp = a; a = i; }                       // swap
+    if      (i == IMM)   a = *pc++;                                       // load global address or immediate
+    else if (i == LEA)   a = (int)(bp + *pc++);                           // load local address
+    else if (i == JMP)   pc = (int*)*pc;                                  // jump
+    else if (i == BZ)    pc = a ? pc + 1 : (int*)*pc;                     // branch if zero
+    else if (i == BNZ)   pc = a ? (int*)*pc : pc + 1;                     // branch if not zero
+    else if (i == JSR)   { *--sp = (int)(pc + 1); pc = (int*)*pc; }       // jump to subroutine
+    else if (i == ADJ)   sp = sp + *pc++;                                 // stack adjust
+    else if (i == ENTER) { *--sp = (int)bp; bp = sp; sp = sp - *pc++; }   // enter subroutine
+    else if (i == LEAVE) { sp = bp; bp = (int*)*sp++; pc = (int*)*sp++; } // leave subroutine
+    else if (i == LI)    a = *(int*)a;                                    // load int
+    else if (i == LC)    a = *(char*)a;                                   // load char
+    else if (i == SI)    *(int*)*sp++ = a;                                // store int
+    else if (i == SC)    a = *(char*)*sp++ = (char)a;                     // store char
+    else if (i == PUSH)  *--sp = a;                                       // push
+    else if (i == SWAP)  { i = *sp; *sp = a; a = i; }                     // swap
 
     else if (i == OR)  a = *sp++ |  a;
     else if (i == XOR) a = *sp++ ^  a;
@@ -662,16 +662,16 @@ int main(int argc, char **argv) {
     else if (i == DIV) a = *sp++ /  a;
     else if (i == MOD) a = *sp++ %  a;
 
-    else if (i == OPEN)   a = open((char *)sp[1], *sp);
-    else if (i == READ)   a = read(sp[2], (char *)sp[1], *sp);
-    else if (i == WRITE)  a = write(sp[2], (char *)sp[1], *sp);
+    else if (i == OPEN)   a = open((char*)sp[1], *sp);
+    else if (i == READ)   a = read(sp[2], (char*)sp[1], *sp);
+    else if (i == WRITE)  a = write(sp[2], (char*)sp[1], *sp);
     else if (i == CLOSE)  a = close(*sp);
-    else if (i == PRINTF) { pp = sp + pc[1]; a = printf((char *)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == PRINTF) { pp = sp + pc[1]; a = printf((char*)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
     else if (i == MALLOC) a = (int)malloc(*sp);
     else if (i == FREE)   { a = *sp; free((void *)a); }
-    else if (i == MEMSET) a = (int)memset((char *)sp[2], sp[1], *sp);
-    else if (i == MEMCPY) a = (int)memcpy((char *)sp[2], (char *)sp[1], *sp);
-    else if (i == MEMCMP) a = memcmp((char *)sp[2], (char *)sp[1], *sp);
+    else if (i == MEMSET) a = (int)memset((char*)sp[2], sp[1], *sp);
+    else if (i == MEMCPY) a = (int)memcpy((char*)sp[2], (char*)sp[1], *sp);
+    else if (i == MEMCMP) a = memcmp((char*)sp[2], (char*)sp[1], *sp);
     else if (i == EXIT)   { printf("exit(%ld), cycle = %ld\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction %ld! cycle = %ld\n", i, cycle); return -1; }
   }
