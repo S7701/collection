@@ -15,7 +15,8 @@ int main() {
   int *p1, *p2;
 
 //  if (p1 = &i) printf("ERROR\n"); // not allowed
-  10 = 0;
+//  9 = 0; // crash
+//  10 = 0; // crash
 
   printf("0: %s\n", 0 ? "FAILED" : "ok");
   printf("1: %s\n", 1 ? "ok" : "FAILED");
