@@ -11,20 +11,20 @@
 
 #define int long // for 64 bit
 
-char *p, *lp, // current position in source code
+char *p, *lp, // current/last position in source code
      *d,      // data/bss pointer
      *ops;    // opcodes
 
-int *e, *le,  // current position in emitted code
+int *e, *le,  // current/last position in emitted code
     *id,      // last parsed identifier
     *sym,     // symbol table (simple list of identifiers)
     tk,       // current token
-    val,      // last token value
+    val,      // last parsed token value for number, character or string
     ty,       // current expression type
     loc,      // local variable offset
     line,     // current line number
     src,      // print source and assembly flag
-    debug;    // print executed instructions
+    dbg;      // print executed instructions
 
 // tokens and classes (operators last and in precedence order)
 enum { Num = 128, Fun, Sys, Global, Local, Id,
@@ -40,14 +40,13 @@ enum { IMM, LEA, JMP, BZ, BNZ, JSR, ADJ, ENTER, LEAVE, LI, LC, SI, SC, PUSH, SWA
 enum { CHAR, INT, PTR };
 
 // identifier offsets (since we can't create an ident struct)
-enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
+enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, IdSz };
 
 void next() {
   char *pp; // previous position
 
   while (*p) {
-    tk = *p;
-    ++p;
+    tk = *p++;
     if (tk == '\n') { // end of line
       if (src) {
         pp = p - 1;
@@ -56,7 +55,7 @@ void next() {
         lp = p;
         while (le < e) {
           printf("    %s", &ops[*++le * 8]);
-          if (*le <= ENTER) { ++le; printf(" %ld (0x%08lx)\n", *le, *le); }
+          if (*le <= ENTER) { ++le; printf(" %ld (0x%lX)\n", *le, *le); }
           else printf("\n");
         }
       }
@@ -74,7 +73,7 @@ void next() {
       id = sym;
       while (id[Tk]) {
         if (tk == id[Hash] && !memcmp((char*)id[Name], pp, p - pp)) { tk = id[Tk]; return; }
-        id = id + Idsz;
+        id = id + IdSz;
       }
       id[Name] = (int)pp;
       id[Hash] = tk;
@@ -83,18 +82,18 @@ void next() {
     }
     else if (tk >= '0' && tk <= '9') { // number
       val = tk - '0';
-      if (val) {
+      if (val) { // decimal number
         while (*p >= '0' && *p <= '9')
           val = val * 10 + *p++ - '0';
       }
-      else if (*p == 'x' || *p == 'X') {
+      else if (*p == 'x' || *p == 'X') { // hexadecimal number
         tk = *++p;
-        while (tk && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F'))) {
+        while ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F')) {
           val = val * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
           tk = *++p;
         }
       }
-      else {
+      else { // octal number
         while (*p >= '0' && *p <= '7')
           val = val * 8 + *p++ - '0';
       }
@@ -161,7 +160,7 @@ void expr(int lev) {
     next(); // skip string literal
     while (tk == '"')
       next(); // concatenate string literals
-    d = (char*)((int)d + sizeof (int) & -sizeof (int)); // align data pointer
+    d = (char*)((int)d + sizeof (int) & -sizeof (int)); // align data pointer; reserve at least 1 byte for '\0'
     ty = PTR; // char pointer
   }
   else if (tk == Sizeof) { // sizeof operator
@@ -420,20 +419,20 @@ int main(int argc, char **argv) {
   int *pc, *sp, *bp, a, cycle; // vm registers
   int i, *pp; // temps
 
-  if (sizeof (int) != sizeof (int*)) { printf("FATAL: (sizeof (int) = %ld) != (sizeof (int*) = %ld)\n", sizeof (int), sizeof (int*)); return -1; }
+  if (sizeof (int) != sizeof (int*)) { printf("FATAL: (sizeof (int): %ld) != (sizeof (int*): %ld)\n", sizeof (int), sizeof (int*)); return -1; }
 
   --argc; ++argv;
-  if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
-  if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { debug = 1; --argc; ++argv; }
+  while (argc > 0 && (*argv)[0] == '-') {
+    if ((*argv)[1] == 's') src = 1;
+    else if ((*argv)[1] == 'd') dbg = 1;
+    --argc; ++argv;
+  }
   if (argc < 1) { printf("usage: cc [-s] [-d] file ...\n"); return -1; }
-
-  fd = open(*argv, 0);
-  if (fd < 0) { printf("could not open(%s)\n", *argv); return -1; }
 
   poolsz = 256 * 1024; // arbitrary size
   sym = malloc(poolsz);
   if (!sym) { printf("could not malloc(%ld) symbol area\n", poolsz); return -1; }
-  le = e = malloc(poolsz);
+  e = le = malloc(poolsz);
   if (!e) { printf("could not malloc(%ld) text area\n", poolsz); return -1; }
   d = malloc(poolsz);
   if (!d) { printf("could not malloc(%ld) data area\n", poolsz); return -1; }
@@ -474,10 +473,14 @@ int main(int argc, char **argv) {
   next();
   idmain = id;
 
-  lp = p = malloc(poolsz);
+  p = lp = malloc(poolsz); // must be allocated after initialization of keywords and library functions
   if (!p) { printf("could not malloc(%ld) source area\n", poolsz); return -1; }
+
+  fd = open(*argv, 0);
+  if (fd < 0) { printf("could not open(%s)\n", *argv); return -1; }
   i = read(fd, p, poolsz-1);
   if (i <= 0) { printf("read() returned %ld\n", i); return -1; }
+  if (i >= poolsz) { printf("source too large; limit: %ld\n", poolsz-1); return -1; }
   p[i] = 0;
   close(fd);
 
@@ -495,22 +498,27 @@ int main(int argc, char **argv) {
       i = 0;
       while (tk != '}') {
         if (tk != Id) { printf("%ld: bad enum declaration; enumerator expected (tk=%ld)\n", line, tk); return -1; }
+        pp = id;
         next();
         if (tk == Assign) {
           next(); // skip '='
-          if (tk != Num) { printf("%ld: bad enum initializer; number expected (tk=%ld)\n", line, tk); return -1; }
-          i = val;
+          if (tk == Id) {
+            if(id[Class] == Num) i = id[Val];
+            else { printf("%ld: bad enum initializer; invalid enumerator (class=%ld)\n", line, id[Class]); return -1; }
+          }
+          else if (tk == Num) i = val;
+          else { printf("%ld: bad enum initializer; number or enumerator expected (tk=%ld)\n", line, tk); return -1; }
           next();
         }
-        id[Class] = Num;
-        id[Type] = INT;
-        id[Val] = i++;
+        pp[Class] = Num;
+        pp[Type] = INT;
+        pp[Val] = i++;
         if (tk == ',') next();
         else if (tk != '}') { printf("%ld: bad enum declaration; ',' or '}' expected (tk=%ld)\n", line, tk); return -1; }
       }
       next(); // skip '}'
     }
-    else ; // ???
+    else { printf("%ld: global declaration expected (tk=%ld)\n", line, tk); return -1; }
 
     while (tk != ';') {
       ty = bt;
@@ -587,9 +595,9 @@ int main(int argc, char **argv) {
             id[Type]  = id[HType];
             id[Val]   = id[HVal];
           }
-          id = id + Idsz;
+          id = id + IdSz;
         }
-        tk = ';'; // break inner while loop after function definition
+        tk = ';'; // break inner while loop after function declaration
       }
       else { // global variable declaration
         id[Class] = Global;
@@ -598,7 +606,7 @@ int main(int argc, char **argv) {
       }
 
       if (tk == ',') next();
-      else if (tk != ';') { printf("%ld: bad global definition; ',' or ';' expected (tk=%ld)\n", line, tk); return -1; }
+      else if (tk != ';') { printf("%ld: bad global declaration; ',' or ';' expected (tk=%ld)\n", line, tk); return -1; }
     }
     next(); // skip ';'
   }
@@ -607,12 +615,13 @@ int main(int argc, char **argv) {
   if (!pc) { printf("main() not defined\n"); return -1; }
   if (src) return 0;
 
-  // call exit if main returns
+  // call exit when main returns
   *++e = PUSH;
   pp = e;
   *++e = EXIT;
+
   // setup stack
-  bp = sp = (int*)((int)sp + poolsz);
+  sp = bp = (int*)((int)sp + poolsz);
   *--sp = argc;
   *--sp = (int)argv;
   *--sp = (int)pp;
@@ -623,9 +632,9 @@ int main(int argc, char **argv) {
     ++cycle;
     i = *pc++;
 
-    if (debug) {
+    if (dbg) {
       printf("%ld> %s", cycle, &ops[i * 8]);
-      if (i <= ENTER) printf(" %ld (0x%08lx)\n", *pc, *pc);
+      if (i <= ENTER) printf(" %ld (0x%lX)\n", *pc, *pc);
       else printf("\n");
     }
 
@@ -666,7 +675,10 @@ int main(int argc, char **argv) {
     else if (i == READ)   a = read(sp[2], (char*)sp[1], *sp);
     else if (i == WRITE)  a = write(sp[2], (char*)sp[1], *sp);
     else if (i == CLOSE)  a = close(*sp);
-    else if (i == PRINTF) { pp = sp + pc[1]; a = printf((char*)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == PRINTF) {
+      if (*pc == ADJ) pp = sp + pc[1]; else { printf("bad instruction sequence; expected ADJ after PRINTF (instruction=%ld)\n", *pc); return -1; }
+      a = printf((char*)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]);
+    }
     else if (i == MALLOC) a = (int)malloc(*sp);
     else if (i == FREE)   { a = *sp; free((void *)a); }
     else if (i == MEMSET) a = (int)memset((char*)sp[2], sp[1], *sp);
