@@ -61,33 +61,28 @@ static Identifier* enum_decl() {
   Identifier* type = 0;
   int l = line; // save enum line number
   next();
-  if (tok == Id) // named enum?
-  {
+  if (tok == Id) { // named enum?
     type = id;
     next();
   }
-  if (tok ==';') // enum declaration?
-  {
-    if (!type)
-    { printf("%d: bad enum declaration; enum name expected, got ';'\n", l); exit(-1); }
-    else if (type->tok == Enum)
-    { printf("%d: duplicate enum declaration; enum name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1); }
-    else if (type->tok != Id)
-    { printf("%d: bad enum declaration; enum name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1); }
-    type->tok = Enum;
+  if (tok ==';') { // enum declaration?
+    if (!type) {
+      printf("%d: bad enum declaration; enum name expected, got ';'\n", l); exit(-1);
+    } else if (type->tok == Enum) {
+      printf("%d: duplicate enum declaration; enum name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1);
+    } else if (type->tok != Id) {
+      printf("%d: bad enum declaration; enum name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1);
+    } type->tok = Enum;
     type->val = sizeof(int);
   }
-  else if (tok == '{') // enum definition?
-  {
-    if (type)
-    {
-      if (type->tok == Enum)
-      { printf("%d: duplicate enum definition; enum name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1); }
-      else if (type->tok != Id)
-      { printf("%d: bad enum definition; enum name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1); }
-    }
-    else
-    {
+  else if (tok == '{') { // enum definition?
+    if (type) {
+      if (type->tok == Enum) {
+        printf("%d: duplicate enum definition; enum name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1);
+      } else if (type->tok != Id) {
+        printf("%d: bad enum definition; enum name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1);
+      }
+    } else {
       char str[32];
       sprintf(str, "__unnamed_enum_%04X", enums);
       int h = get_hash(str);
@@ -98,14 +93,12 @@ static Identifier* enum_decl() {
     type->val = sizeof(int);
     next();
     int i = 0;
-    while (tok !='}')
-    {
+    while (tok !='}') {
       Identifier* name;
       if (tok != Id) { printf("%d: bad enum definition; enumerator identifier expected\n", line); exit(-1); }
       name = id; ids = name->next; name->next = 0; // remove id from global identifier list
       next();
-      if (tok == '=')
-      {
+      if (tok == '=') {
         next();
         if (tok != Num) { printf("%d: bad enumerator initializer; number expected, got %s\n", line, tokens[id->tok - Num]); exit(-1); }
         i = val;
@@ -114,9 +107,7 @@ static Identifier* enum_decl() {
       name->tok = Num; name->val = i++;
       name->next = type->ref; type->ref = name; // add id to member list
     }
-  }
-  else
-  { printf("%d: enum declaration or definition expected, got %s\n", l, tokens[id->tok - Num]); exit(-1); }
+  } else { printf("%d: enum declaration or definition expected, got %s\n", l, tokens[id->tok - Num]); exit(-1); }
   return type;
 }
 
@@ -124,33 +115,28 @@ Identifier* struct_decl() {
   Identifier* type = 0;
   int l = line; // save struct line number
   next();
-  if (tok == Id) // named struct?
-  {
+  if (tok == Id) { // named struct?
     type = id;
     next();
   }
-  if (tok ==';') // struct declaration?
-  {
-    if (!type)
-    { printf("%d: bad struct declaration; struct name expected, got ';'\n", l); exit(-1); }
-    else if (type->tok == Struct)
-    { printf("%d: duplicate struct declaration; struct name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1); }
-    else if (type->tok != Id)
-    { printf("%d: bad struct declaration; struct name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1); }
+  if (tok ==';') { // struct declaration?
+    if (!type) {
+      printf("%d: bad struct declaration; struct name expected, got ';'\n", l); exit(-1);
+    } else if (type->tok == Struct) {
+      printf("%d: duplicate struct declaration; struct name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1);
+    } else if (type->tok != Id) {
+      printf("%d: bad struct declaration; struct name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1);
+    }
     type->tok = Struct;
     type->val = sizeof(int);
-  }
-  else if (tok == '{') // struct definition?
-  {
-    if (type)
-    {
-      if (type->tok == Struct)
-      { printf("%d: duplicate struct definition; struct name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1); }
-      else if (type->tok != Id)
-      { printf("%d: bad struct definition; struct name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1); }
-    }
-    else
-    {
+  } else if (tok == '{') { // struct definition?
+    if (type) {
+      if (type->tok == Struct) {
+        printf("%d: duplicate struct definition; struct name '%s' already declared in line %d\n", l, type->str, type->line); exit(-1);
+      } else if (type->tok != Id) {
+        printf("%d: bad struct definition; struct name '%s' already declared in line %d as %s\n", l, type->str, type->line, tokens[id->tok - Num]); exit(-1);
+      }
+    } else {
       char str[32];
       sprintf(str, "__unnamed_struct_%04X", structs);
       int h = get_hash(str);
@@ -161,13 +147,10 @@ Identifier* struct_decl() {
     type->val = sizeof(int);
     next();
     int o = 0; // offset in structure
-    while (tok !='}')
-    {
+    while (tok !='}') {
       // TODO
     }
-  }
-  else
-  { printf("%d: struct declaration or definition expected, got %s\n", l, tokens[id->tok - Num]); exit(-1); }
+  } else { printf("%d: struct declaration or definition expected, got %s\n", l, tokens[id->tok - Num]); exit(-1); }
   return type;
 }
 
@@ -182,8 +165,7 @@ Identifier* struct_decl() {
 // type ('*')* identifier (',' ('*')* identifier)* ';'
 static Identifier* decl() {
   Identifier* type = 0;
-  switch (tok)
-  {
+  switch (tok) {
   case CharKW:
     type = id;
     break;

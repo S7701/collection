@@ -5,18 +5,19 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
+bool demo = false;
+
 #define NTP_ADDRESS      "de.pool.ntp.org"  // see ntp.org for ntp pools
 #define NTP_INTERVALL    3607  // seconds = ~1 hour (prime number)
 #define MAX_NTP_RETRIES  24
 
-#define MAX_BRIGHTNESS 100
-
-bool display = true;
-bool demo = false;
 time_t ntpTime = 0;
-time_t ntpErrorTime = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
+
+bool dim = true;
+int nightBegin = 22;
+int nightEnd = 6;
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -44,7 +45,12 @@ const unsigned fgColorCount = sizeof fgColors / sizeof fgColors[0];
 unsigned fgColorFirstWord = 0; // index in color table for first word
 unsigned fgColorNextWord = 0;  // index in color table for next word
 
-unsigned brightness = MAX_BRIGHTNESS;
+#define MAX_BRIGHTNESS   255
+#define NIGHT_BRIGHTNESS  15
+
+unsigned brightness      = MAX_BRIGHTNESS;
+unsigned brightnessDay   = MAX_BRIGHTNESS;
+unsigned brightnessNight = NIGHT_BRIGHTNESS;
 
 RgbColor bgColor(0, 0, 0); // black
 
@@ -181,30 +187,34 @@ void loop() {
   time_t local = now();
 
   if (demo) {
-    static time_t now = 0;
-    local = now;
-    now += 10;
+    static time_t t = 0;
+    local = t;
+    t += 30;
   }
 
   server.handleClient();
   ArduinoOTA.handle();
 
-  if (display) {
-    switch (state) {
-    case 0: // Show time on wordclock; update every minute
-      showTime(local);
-      state = 1;
-      break;
-    case 1: // Wait until the first second of the current minute is over
-      if (second(local) != 0) state = 2;
-      break;
-    case 2: // Wait for the first second in the next minute
-      if (second(local) == 0) state = 0;
-      break;
-    }
+  int hour24 = hour(local);
+  if (dim && (nightBegin <= hour24 || hour24 < nightEnd)) {
+    brightness = brightnessNight;
+  } else {
+    brightness = brightnessDay;
   }
 
-  delay(100); // ms
+  switch (state) {
+  case 0: // Wait for the first second of a minute, then show time on wordclock
+    if (second(local) == 0) {
+      showTime(local);
+      state = 1;
+    }
+    break;
+  case 1: // Wait until the first second of the current minute is over
+    if (second(local) != 0) state = 0;
+    break;
+  }
+
+  delay(333); // ms
 }
 
 void showTime(time_t local) {
@@ -213,7 +223,7 @@ void showTime(time_t local) {
 
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
 
-  Serial.printf("Show time: %d:%02d:%02d, display %s\n", hour(local), minute(local), second(local), display ? "on" : "off");
+  Serial.printf("Show time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
 
   // start with next color in color list
   if (++fgColorFirstWord >= fgColorCount) fgColorFirstWord = 0;
@@ -249,8 +259,10 @@ time_t getNtpTime() {
   if (!ntpClient.update()) {
     ++ntpErrors;
     if (++ntpRetries == MAX_NTP_RETRIES) ESP.restart();
-  } else
-    ntpRetries = 0;
+    return 0;
+  }
+
+  ntpRetries = 0;
 
   time_t utc = ntpClient.getEpochTime();
 
@@ -260,8 +272,6 @@ time_t getNtpTime() {
   Timezone tz(CEST, CET);
   ntpTime = tz.toLocal(utc);
 
-  if (ntpRetries) ntpErrorTime = ntpTime;
-
   Serial.printf("NTP time: %d:%02d:%02d\n", hour(ntpTime), minute(ntpTime), second(ntpTime));
 
   return ntpTime;
@@ -269,12 +279,8 @@ time_t getNtpTime() {
 
 void handleHttpGet() {
   char cur_time[80];
-  char ntp_time[80];
-  char ntp_error_time[80];
   time_t local = now();
   sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
-  sprintf(ntp_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
-  sprintf(ntp_error_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpErrorTime), month(ntpErrorTime), year(ntpErrorTime), hour(ntpErrorTime), minute(ntpErrorTime), second(ntpErrorTime));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
@@ -288,24 +294,36 @@ void handleHttpGet() {
 
     "<p>" \
     "<label>aktuelle Uhrzeit</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"10\" disabled value=\""+ String(cur_time) +"\">" \
-    "</p>" \
-
-    "<p>" \
-    "<label>Anzeige</label><br>" \
-    "<input type=\"radio\" name=\"display\" value=\"on\""+ String(display ? " checked" : "") +">" \
-    "<label>ein</label>" \
-    "<input type=\"radio\" name=\"display\" value=\"off\""+ String(display ? "" : " checked") +">" \
-    "<label>aus</label>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
     "<label>Helligkeit</label><br>" \
-    "<input type=\"range\" name=\"brightness\" min=\"0\" max=\""+ String(MAX_BRIGHTNESS) +"\" step=\"10\" value=\""+ String(brightness) +"\">"
+    "<input type=\"range\" name=\"brightness\" min=\"0\" max=\""+ String(MAX_BRIGHTNESS) +"\" value=\""+ String(brightness) +"\" disabled>" \
+    "<br>" \
+    "Tag <input type=\"text\" name=\"brightnessDay\" style=\"text-align:center\" size=\"2\" value=\""+ String(brightnessDay) +"\">  " \
+    "<br>" \
+    "Nacht <input type=\"text\" name=\"brightnessNight\" style=\"text-align:center\" size=\"2\" value=\""+ String(brightnessNight) +"\">" \
     "</p>" \
 
     "<p>" \
-    "<label>Demo</label><br>" \
+    "<label>Nachts abdunkeln</label>" \
+    "<input type=\"radio\" name=\"dim\" value=\"on\""+ String(dim ? " checked" : "") +">" \
+    "<label>ein</label>" \
+    "<input type=\"radio\" name=\"dim\" value=\"off\""+ String(dim ? "" : " checked") +">" \
+    "<label>aus</label>" \
+    "</p>" \
+
+    "<p>" \
+    "von " \
+    "<input type=\"text\" name=\"nightBegin\" style=\"text-align:center\" size=\"2\" value=\""+ String(nightBegin) +"\">" \
+    " Uhr bis " \
+    "<input type=\"text\" name=\"nightEnd\" style=\"text-align:center\" size=\"2\" value=\""+ String(nightEnd) +"\">" \
+    " Uhr" \
+    "</p>" \
+
+    "<p>" \
+    "<label>Demo</label>" \
     "<input type=\"radio\" name=\"demo\" value=\"on\""+ String(demo ? " checked" : "") +">" \
     "<label>ein</label>" \
     "<input type=\"radio\" name=\"demo\" value=\"off\""+ String(demo ? "" : " checked") +">" \
@@ -330,7 +348,12 @@ void handleHttpGet() {
 */
 
     "<p>" \
-    "<a href=\"/info\">Wortuhr Informationen</a>" \
+    "<label>Neustart</label>" \
+    "<input type=\"checkbox\" name=\"restart\">" \
+    "</p>" \
+
+    "<p>" \
+    "<a href=\"/info\">weitere Informationen</a>" \
     "</p>" \
 
     "<input type=\"submit\" value=\"Aktualisieren\">" \
@@ -343,11 +366,9 @@ void handleHttpGet() {
 void handleHttpGetInfo() {
   char cur_time[80];
   char ntp_time[80];
-  char ntp_error_time[80];
   time_t local = now();
   sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
   sprintf(ntp_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
-  sprintf(ntp_error_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpErrorTime), month(ntpErrorTime), year(ntpErrorTime), hour(ntpErrorTime), minute(ntpErrorTime), second(ntpErrorTime));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
@@ -361,27 +382,22 @@ void handleHttpGetInfo() {
 
     "<p>" \
     "<label>aktuelle Uhrzeit</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"10\" disabled value=\""+ String(cur_time) +"\">" \
+    "<input type=\"text\" name=\"cur_time\" style=\"text-align:center\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
     "<label>letzte NTP Aktualisierung</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_time\" size=\"20\" disabled value=\""+ String(ntp_time) +"\">" \
+    "<input type=\"text\"name=\"ntp_time\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntp_time) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
-    "<label>letzte erfolglose NTP Aktualisierung</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntp_error_time\" size=\"20\" disabled value=\""+ String(ntp_error_time) +"\">" \
+    "<label>erfolglose NTP Aktualisierungen (NTP Errors)</label><br>" \
+    "<input type=\"text\" name=\"ntpErrors\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpErrors) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
-    "<label>erfolglose NTP Aktualisierungen</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntpErrors\" size=\"5\" disabled value=\""+ String(ntpErrors) +"\">" \
-    "</p>" \
-
-    "<p>" \
-    "<label>wiederholt erfolglose NTP Aktualisierungen</label><br>" \
-    "<input type=\"text\" style=\"text-align:center\" name=\"ntpRetries\" size=\"5\" disabled value=\""+ String(ntpRetries) +"\">" \
+    "<label>wiederholt erfolglose NTP Aktualisierungen (NTP Retries)</label><br>" \
+    "<input type=\"text\" name=\"ntpRetries\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpRetries) +"\" disabled>" \
     "</p>" \
 
     "</form>" \
@@ -391,14 +407,40 @@ void handleHttpGetInfo() {
 }
 
 void handleHttpPost() {
-  if (server.hasArg("display")) {
-    if (server.arg("display") == "on") display = true;
-    if (server.arg("display") == "off") display = false;
+  if (server.hasArg("restart")) {
+    if (server.arg("restart") == "on") ESP.restart();
   }
   if (server.hasArg("demo")) {
     if (server.arg("demo") == "on") demo = true;
     if (server.arg("demo") == "off") demo = false;
   }
+/*
+  if (server.hasArg("brightness")) {
+    brightness = toUnsigned(server.arg("brightness"));
+    if (brightness > MAX_BRIGHTNESS) brightness = MAX_BRIGHTNESS;
+  }
+*/
+  if (server.hasArg("brightnessDay")) {
+    brightnessDay = toUnsigned(server.arg("brightnessDay"));
+    if (brightnessDay > MAX_BRIGHTNESS) brightnessDay = MAX_BRIGHTNESS;
+  }
+  if (server.hasArg("brightnessNight")) {
+    brightnessNight = toUnsigned(server.arg("brightnessNight"));
+    if (brightnessNight > MAX_BRIGHTNESS) brightnessNight = MAX_BRIGHTNESS;
+  }
+  if (server.hasArg("dim")) {
+    if (server.arg("dim") == "on") dim = true;
+    if (server.arg("dim") == "off") dim = false;
+  }
+  if (server.hasArg("nightBegin")) {
+    nightBegin = toUnsigned(server.arg("nightBegin"));
+    if (nightBegin > MAX_BRIGHTNESS) nightBegin = MAX_BRIGHTNESS;
+  }
+  if (server.hasArg("nightEnd")) {
+    nightEnd = toUnsigned(server.arg("nightEnd"));
+    if (nightEnd > MAX_BRIGHTNESS) nightEnd = MAX_BRIGHTNESS;
+  }
+/*
   if (server.hasArg("fgColor0")) {
     fgColors[0] = toRgbColor(server.arg("fgColor0"));
   }
@@ -420,30 +462,25 @@ void handleHttpPost() {
   if (server.hasArg("bgColor")) {
     bgColor = toRgbColor(server.arg("bgColor"));
   }
-  if (server.hasArg("brightness")) {
-    brightness = toUnsigned(server.arg("brightness"));
-    if (brightness > MAX_BRIGHTNESS) brightness = MAX_BRIGHTNESS;
-  }
-
-  if (!display) {
-#if STRIP_PIN == LED_BUILTIN
-    // reinitialize LED strip
-    strip.Begin();
-#endif
-
-    strip.ClearTo(black);
-    strip.Show();
+*/
 
 #if STRIP_PIN == LED_BUILTIN
-    // let the strip update
-    delay(1);
-    // turn the builtin LED off by setting the output HIGH
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);
+  // reinitialize LED strip
+  strip.Begin();
 #endif
-  }
 
-  if (display && !demo) showTime(now());
+  strip.ClearTo(black);
+  strip.Show();
+
+#if STRIP_PIN == LED_BUILTIN
+  // let the strip update
+  delay(1);
+  // turn the builtin LED off by setting the output HIGH
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+#endif
+
+  if (!demo) showTime(now());
 
   handleHttpGet();
 }
@@ -472,5 +509,5 @@ void setBrightness(RgbColor& rgb) {
   if (brightness >= MAX_BRIGHTNESS) return;
   rgb.R = rgb.R * brightness / MAX_BRIGHTNESS;
   rgb.G = rgb.G * brightness / MAX_BRIGHTNESS;
-  rgb.B = rgb.B* brightness / MAX_BRIGHTNESS;
+  rgb.B = rgb.B * brightness / MAX_BRIGHTNESS;
 }
