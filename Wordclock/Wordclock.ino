@@ -7,17 +7,23 @@
 
 bool demo = false;
 
-#define NTP_ADDRESS      "de.pool.ntp.org"  // see ntp.org for ntp pools
-#define NTP_INTERVALL    3607  // seconds = ~1 hour (prime number)
-#define MAX_NTP_RETRIES  24
+#define NTP_ADDRESS     "de.pool.ntp.org"  // see ntp.org for ntp pools
+#define NTP_INTERVALL   3607  // seconds = ~1 hour (prime number)
+#define MAX_NTP_RETRIES 24
 
 time_t ntpTime = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
 
 bool dim = true;
-int nightBegin = 22;
-int nightEnd = 6;
+int beginDim = 22;
+int endDim = 5;
+
+#define BRIGHTNESS_MAX 255
+
+unsigned brightness         = BRIGHTNESS_MAX;
+unsigned brightnessStandard = BRIGHTNESS_MAX;
+unsigned brightnessDimmed   = 15;
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -44,13 +50,6 @@ const unsigned fgColorCount = sizeof fgColors / sizeof fgColors[0];
 
 unsigned fgColorFirstWord = 0; // index in color table for first word
 unsigned fgColorNextWord = 0;  // index in color table for next word
-
-#define MAX_BRIGHTNESS   255
-#define NIGHT_BRIGHTNESS  15
-
-unsigned brightness      = MAX_BRIGHTNESS;
-unsigned brightnessDay   = MAX_BRIGHTNESS;
-unsigned brightnessNight = NIGHT_BRIGHTNESS;
 
 RgbColor bgColor(0, 0, 0); // black
 
@@ -150,7 +149,7 @@ void setup() {
 
   ntpClient.begin();
   setSyncProvider(getNtpTime);
-  setSyncInterval(NTP_INTERVALL);  // 1 hour
+  setSyncInterval(NTP_INTERVALL);  // ~1 hour
 
   server.on("/", HTTP_GET, handleHttpGet);
   server.on("/info", HTTP_GET, handleHttpGetInfo);
@@ -186,26 +185,20 @@ void loop() {
   static int state = 0;
   time_t local = now();
 
-  if (demo) {
-    static time_t t = 0;
-    local = t;
-    t += 30;
-  }
-
   server.handleClient();
   ArduinoOTA.handle();
 
-  int hour24 = hour(local);
-  if (dim && (nightBegin <= hour24 || hour24 < nightEnd)) {
-    brightness = brightnessNight;
-  } else {
-    brightness = brightnessDay;
+  if (demo) {
+    static time_t t = 0;
+    local = t;
+    t += 60;
+    state = 0;
   }
 
   switch (state) {
-  case 0: // Wait for the first second of a minute, then show time on wordclock
+  case 0: // Wait for the first second of a minute
     if (second(local) == 0) {
-      showTime(local);
+      updateStrip(local);
       state = 1;
     }
     break;
@@ -217,13 +210,28 @@ void loop() {
   delay(333); // ms
 }
 
-void showTime(time_t local) {
+void updateStrip(time_t local) {
   int hour12 = hourFormat12(local);  // 1...12 (0?)
-  int minute5 = minute(local) / 5;  // 0...11
-
-  if (minute5 >= 3) ++hour12;  // 1...13 (0?)
+  int hour24 = hour(local);          // 1...24 (0?)
+  int minute5 = minute(local) / 5;   // 0...11
 
   Serial.printf("Show time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
+
+  // adjust brightness if necessary
+  if (dim && (beginDim <= hour24 || hour24 < endDim)) {
+    if (brightness > brightnessDimmed) {
+      brightness -= (brightnessStandard - brightnessDimmed) / 60;
+    }
+    if (brightness < brightnessDimmed) brightness = brightnessDimmed;
+  } else {
+    if (brightness < brightnessStandard) {
+      brightness += (brightnessStandard - brightnessDimmed) / 60;
+    }
+    if (brightness > brightnessStandard) brightness = brightnessStandard;
+  }
+
+  // all phrases from "quarter" onwards refer to the next hour
+  if (minute5 >= 3) ++hour12;  // 1...13 (0?)
 
   // start with next color in color list
   if (++fgColorFirstWord >= fgColorCount) fgColorFirstWord = 0;
@@ -285,7 +293,7 @@ void handleHttpGet() {
     "<!DOCTYPE html>" \
     "<html>" \
     "<head>" \
-    "<title>Wortuhr v1.0</title>" \
+    "<title>Wortuhr v2.0</title>" \
     "</head>" \
     "<body>" \
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
@@ -293,46 +301,44 @@ void handleHttpGet() {
     "<strong>Wortuhr Einstellungen</strong>" \
 
     "<p>" \
-    "<label>aktuelle Uhrzeit</label><br>" \
+    "Aktuelle Uhrzeit " \
     "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
-    "<label>Helligkeit</label><br>" \
-    "<input type=\"range\" name=\"brightness\" min=\"0\" max=\""+ String(MAX_BRIGHTNESS) +"\" value=\""+ String(brightness) +"\" disabled>" \
+    "Aktuelle Helligkeit " \
+    "<input type=\"text\" name=\"brightnessStandard\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightness) +"\" disabled>" \
     "<br>" \
-    "Tag <input type=\"text\" name=\"brightnessDay\" style=\"text-align:center\" size=\"2\" value=\""+ String(brightnessDay) +"\">  " \
+    "Standard Helligkeit " \
+    "<input type=\"text\" name=\"brightnessStandard\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightnessStandard) +"\">" \
     "<br>" \
-    "Nacht <input type=\"text\" name=\"brightnessNight\" style=\"text-align:center\" size=\"2\" value=\""+ String(brightnessNight) +"\">" \
+    "Abgeblendete Helligkeit " \
+    "<input type=\"text\" name=\"brightnessDimmed\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightnessDimmed) +"\">" \
     "</p>" \
 
     "<p>" \
-    "<label>Nachts abdunkeln</label>" \
-    "<input type=\"radio\" name=\"dim\" value=\"on\""+ String(dim ? " checked" : "") +">" \
-    "<label>ein</label>" \
-    "<input type=\"radio\" name=\"dim\" value=\"off\""+ String(dim ? "" : " checked") +">" \
-    "<label>aus</label>" \
-    "</p>" \
-
-    "<p>" \
-    "von " \
-    "<input type=\"text\" name=\"nightBegin\" style=\"text-align:center\" size=\"2\" value=\""+ String(nightBegin) +"\">" \
+    "Abgeblendet von " \
+    "<input type=\"text\" name=\"beginDim\" style=\"text-align:center\" size=\"2\" value=\""+ String(beginDim) +"\">" \
     " Uhr bis " \
-    "<input type=\"text\" name=\"nightEnd\" style=\"text-align:center\" size=\"2\" value=\""+ String(nightEnd) +"\">" \
-    " Uhr" \
+    "<input type=\"text\" name=\"endDim\" style=\"text-align:center\" size=\"2\" value=\""+ String(endDim) +"\">" \
+    " Uhr " \
+    "<input type=\"radio\" name=\"dim\" value=\"on\""+ String(dim ? " checked" : "") +">" \
+    "ein " \
+    "<input type=\"radio\" name=\"dim\" value=\"off\""+ String(dim ? "" : " checked") +">" \
+    "aus " \
     "</p>" \
 
     "<p>" \
-    "<label>Demo</label>" \
+    "Demo" \
     "<input type=\"radio\" name=\"demo\" value=\"on\""+ String(demo ? " checked" : "") +">" \
-    "<label>ein</label>" \
+    "ein " \
     "<input type=\"radio\" name=\"demo\" value=\"off\""+ String(demo ? "" : " checked") +">" \
-    "<label>aus</label>" \
+    "aus " \
     "</p>" \
 
 /*
     "<p>" \
-    "<label>Vordergrundfarben</label><br>" \
+    "Vordergrundfarben<br>" \
     "<input type=\"color\" name=\"fgColor0\" value=\""+ toString(fgColors[0]) +"\">" \
     "<input type=\"color\" name=\"fgColor1\" value=\""+ toString(fgColors[1]) +"\">" \
     "<input type=\"color\" name=\"fgColor2\" value=\""+ toString(fgColors[2]) +"\">" \
@@ -342,13 +348,13 @@ void handleHttpGet() {
     "</p>" \
 
     "<p>" \
-    "<label>Hintergrundfarbe</label><br>" \
+    "Hintergrundfarbe<br>" \
     "<input type=\"color\" name=\"bgColor\" value=\""+ toString(bgColor) +"\">" \
     "</p>" \
 */
 
     "<p>" \
-    "<label>Neustart</label>" \
+    "Neustart " \
     "<input type=\"checkbox\" name=\"restart\">" \
     "</p>" \
 
@@ -373,7 +379,7 @@ void handleHttpGetInfo() {
     "<!DOCTYPE html>" \
     "<html>" \
     "<head>" \
-    "<title>Wortuhr v1.0</title>" \
+    "<title>Wortuhr v2.0</title>" \
     "</head>" \
     "<body>" \
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
@@ -381,22 +387,18 @@ void handleHttpGetInfo() {
     "<strong>Wortuhr Informationen</strong>" \
 
     "<p>" \
-    "<label>aktuelle Uhrzeit</label><br>" \
+    "Aktuelle Uhrzeit " \
     "<input type=\"text\" name=\"cur_time\" style=\"text-align:center\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
-    "<label>letzte NTP Aktualisierung</label><br>" \
+    "Letzte NTP Aktualisierung " \
     "<input type=\"text\"name=\"ntp_time\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntp_time) +"\" disabled>" \
-    "</p>" \
-
-    "<p>" \
-    "<label>erfolglose NTP Aktualisierungen (NTP Errors)</label><br>" \
+    "<br>" \
+    "Gesamt erfolglose NTP Aktualisierungen (NTP Errors) " \
     "<input type=\"text\" name=\"ntpErrors\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpErrors) +"\" disabled>" \
-    "</p>" \
-
-    "<p>" \
-    "<label>wiederholt erfolglose NTP Aktualisierungen (NTP Retries)</label><br>" \
+    "<br>" \
+    "Wiederholt erfolglose NTP Aktualisierungen (NTP Retries) " \
     "<input type=\"text\" name=\"ntpRetries\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpRetries) +"\" disabled>" \
     "</p>" \
 
@@ -417,28 +419,28 @@ void handleHttpPost() {
 /*
   if (server.hasArg("brightness")) {
     brightness = toUnsigned(server.arg("brightness"));
-    if (brightness > MAX_BRIGHTNESS) brightness = MAX_BRIGHTNESS;
+    if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
   }
 */
-  if (server.hasArg("brightnessDay")) {
-    brightnessDay = toUnsigned(server.arg("brightnessDay"));
-    if (brightnessDay > MAX_BRIGHTNESS) brightnessDay = MAX_BRIGHTNESS;
+  if (server.hasArg("brightnessStandard")) {
+    brightnessStandard = toUnsigned(server.arg("brightnessStandard"));
+    if (brightnessStandard > BRIGHTNESS_MAX) brightnessStandard = BRIGHTNESS_MAX;
   }
-  if (server.hasArg("brightnessNight")) {
-    brightnessNight = toUnsigned(server.arg("brightnessNight"));
-    if (brightnessNight > MAX_BRIGHTNESS) brightnessNight = MAX_BRIGHTNESS;
+  if (server.hasArg("brightnessDimmed")) {
+    brightnessDimmed = toUnsigned(server.arg("brightnessDimmed"));
+    if (brightnessDimmed > BRIGHTNESS_MAX) brightnessDimmed = BRIGHTNESS_MAX;
   }
   if (server.hasArg("dim")) {
     if (server.arg("dim") == "on") dim = true;
     if (server.arg("dim") == "off") dim = false;
   }
-  if (server.hasArg("nightBegin")) {
-    nightBegin = toUnsigned(server.arg("nightBegin"));
-    if (nightBegin > MAX_BRIGHTNESS) nightBegin = MAX_BRIGHTNESS;
+  if (server.hasArg("beginDim")) {
+    beginDim = toUnsigned(server.arg("beginDim"));
+    if (beginDim > BRIGHTNESS_MAX) beginDim = BRIGHTNESS_MAX;
   }
-  if (server.hasArg("nightEnd")) {
-    nightEnd = toUnsigned(server.arg("nightEnd"));
-    if (nightEnd > MAX_BRIGHTNESS) nightEnd = MAX_BRIGHTNESS;
+  if (server.hasArg("endDim")) {
+    endDim = toUnsigned(server.arg("endDim"));
+    if (endDim > BRIGHTNESS_MAX) endDim = BRIGHTNESS_MAX;
   }
 /*
   if (server.hasArg("fgColor0")) {
@@ -480,7 +482,7 @@ void handleHttpPost() {
   digitalWrite(LED_BUILTIN, HIGH);
 #endif
 
-  if (!demo) showTime(now());
+  if (!demo) updateStrip(now());
 
   handleHttpGet();
 }
@@ -506,8 +508,8 @@ String toString(const RgbColor& rgb) {
 }
 
 void setBrightness(RgbColor& rgb) {
-  if (brightness >= MAX_BRIGHTNESS) return;
-  rgb.R = rgb.R * brightness / MAX_BRIGHTNESS;
-  rgb.G = rgb.G * brightness / MAX_BRIGHTNESS;
-  rgb.B = rgb.B * brightness / MAX_BRIGHTNESS;
+  if (brightness >= BRIGHTNESS_MAX) return;
+  rgb.R = rgb.R * brightness / BRIGHTNESS_MAX;
+  rgb.G = rgb.G * brightness / BRIGHTNESS_MAX;
+  rgb.B = rgb.B * brightness / BRIGHTNESS_MAX;
 }
