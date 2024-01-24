@@ -5,6 +5,8 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
+#define VERSION_STR "v2.1"
+
 bool demo = false;
 
 #define NTP_ADDRESS     "de.pool.ntp.org"  // see ntp.org for ntp pools
@@ -15,15 +17,22 @@ time_t ntpTime = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
 
-bool dim = true;
-int beginDim = 22;
-int endDim = 5;
+#define DIM_BEGIN_DEFAULT    22
+#define DIM_END_DEFAULT       5
+#define DIM_INTERVAL_DEFAULT 60
+#define DIM_INTERVAL_MAX     (6 * 60)
 
-#define BRIGHTNESS_MAX 255
+bool dim = true;
+int dimBegin    = DIM_BEGIN_DEFAULT;
+int dimEnd      = DIM_END_DEFAULT;
+int dimInterval = DIM_INTERVAL_DEFAULT; // minutes
+
+#define BRIGHTNESS_MAX 100
+#define BRIGHTNESS_MIN   0
 
 unsigned brightness         = BRIGHTNESS_MAX;
 unsigned brightnessStandard = BRIGHTNESS_MAX;
-unsigned brightnessDimmed   = 15;
+unsigned brightnessDimmed   = 10;
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -218,17 +227,18 @@ void updateStrip(time_t local) {
   Serial.printf("Show time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
 
   // adjust brightness if necessary
-  if (dim && (beginDim <= hour24 || hour24 < endDim)) {
-    if (brightness > brightnessDimmed) {
-      brightness -= (brightnessStandard - brightnessDimmed) / 60;
+  if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
+  if (dim) {
+    if (dimBegin <= hour24 || hour24 < dimEnd) {
+      if (brightness > brightnessDimmed) brightness -= (brightnessStandard - brightnessDimmed) / dimInterval;
+      if (brightness < brightnessDimmed) brightness = brightnessDimmed;
     }
-    if (brightness < brightnessDimmed) brightness = brightnessDimmed;
-  } else {
-    if (brightness < brightnessStandard) {
-      brightness += (brightnessStandard - brightnessDimmed) / 60;
+    else {
+      if (brightness < brightnessStandard) brightness += (brightnessStandard - brightnessDimmed) / dimInterval;
+      if (brightness > brightnessStandard) brightness = brightnessStandard;
     }
-    if (brightness > brightnessStandard) brightness = brightnessStandard;
   }
+  else if (brightness != brightnessStandard) brightness = brightnessStandard;
 
   // all phrases from "quarter" onwards refer to the next hour
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
@@ -247,7 +257,8 @@ void updateStrip(time_t local) {
   phrases[minute5].show();
   if ((hour12 == 1) && (minute5 == 0)) {
     ein.show();
-  } else {
+  }
+  else {
     hours[hour12].show();
   }
   strip.Show();
@@ -286,14 +297,14 @@ time_t getNtpTime() {
 }
 
 void handleHttpGet() {
-  char cur_time[80];
+  char curTimeStr[80];
   time_t local = now();
-  sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
+  sprintf(curTimeStr, "%d:%02d:%02d", hour(local), minute(local), second(local));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
     "<head>" \
-    "<title>Wortuhr v2.0</title>" \
+    "<title>Wortuhr " VERSION_STR "</title>" \
     "</head>" \
     "<body>" \
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
@@ -302,30 +313,37 @@ void handleHttpGet() {
 
     "<p>" \
     "Aktuelle Uhrzeit " \
-    "<input type=\"text\" style=\"text-align:center\" name=\"cur_time\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
+    "<input type=\"text\" style=\"text-align:center\" name=\"curTimeStr\" size=\"8\" value=\""+ String(curTimeStr) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
     "Aktuelle Helligkeit " \
     "<input type=\"text\" name=\"brightnessStandard\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightness) +"\" disabled>" \
+    " % " \
     "<br>" \
     "Standard Helligkeit " \
     "<input type=\"text\" name=\"brightnessStandard\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightnessStandard) +"\">" \
+    " % " \
     "<br>" \
     "Abgeblendete Helligkeit " \
     "<input type=\"text\" name=\"brightnessDimmed\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightnessDimmed) +"\">" \
+    " % " \
     "</p>" \
 
     "<p>" \
     "Abgeblendet von " \
-    "<input type=\"text\" name=\"beginDim\" style=\"text-align:center\" size=\"2\" value=\""+ String(beginDim) +"\">" \
+    "<input type=\"text\" name=\"dimBegin\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimBegin) +"\">" \
     " Uhr bis " \
-    "<input type=\"text\" name=\"endDim\" style=\"text-align:center\" size=\"2\" value=\""+ String(endDim) +"\">" \
+    "<input type=\"text\" name=\"dimEnd\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimEnd) +"\">" \
     " Uhr " \
     "<input type=\"radio\" name=\"dim\" value=\"on\""+ String(dim ? " checked" : "") +">" \
     "ein " \
     "<input type=\"radio\" name=\"dim\" value=\"off\""+ String(dim ? "" : " checked") +">" \
     "aus " \
+    "<br>" \
+    "Auf-/abblenden in " \
+    "<input type=\"text\" name=\"dimInterval\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimInterval) +"\">" \
+    "Minuten " \
     "</p>" \
 
     "<p>" \
@@ -370,16 +388,16 @@ void handleHttpGet() {
 }
 
 void handleHttpGetInfo() {
-  char cur_time[80];
-  char ntp_time[80];
+  char curTimeStr[80];
+  char ntpTimeStr[80];
   time_t local = now();
-  sprintf(cur_time, "%d:%02d:%02d", hour(local), minute(local), second(local));
-  sprintf(ntp_time, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
+  sprintf(curTimeStr, "%d:%02d:%02d", hour(local), minute(local), second(local));
+  sprintf(ntpTimeStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
     "<head>" \
-    "<title>Wortuhr v2.0</title>" \
+    "<title>Wortuhr " VERSION_STR "</title>" \
     "</head>" \
     "<body>" \
     "<form method=\"POST\" style=\"text-align:center;line-height:1.5\">" \
@@ -388,12 +406,12 @@ void handleHttpGetInfo() {
 
     "<p>" \
     "Aktuelle Uhrzeit " \
-    "<input type=\"text\" name=\"cur_time\" style=\"text-align:center\" size=\"8\" value=\""+ String(cur_time) +"\" disabled>" \
+    "<input type=\"text\" name=\"curTimeStr\" style=\"text-align:center\" size=\"8\" value=\""+ String(curTimeStr) +"\" disabled>" \
     "</p>" \
 
     "<p>" \
     "Letzte NTP Aktualisierung " \
-    "<input type=\"text\"name=\"ntp_time\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntp_time) +"\" disabled>" \
+    "<input type=\"text\"name=\"ntpTimeStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpTimeStr) +"\" disabled>" \
     "<br>" \
     "Gesamt erfolglose NTP Aktualisierungen (NTP Errors) " \
     "<input type=\"text\" name=\"ntpErrors\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpErrors) +"\" disabled>" \
@@ -434,13 +452,17 @@ void handleHttpPost() {
     if (server.arg("dim") == "on") dim = true;
     if (server.arg("dim") == "off") dim = false;
   }
-  if (server.hasArg("beginDim")) {
-    beginDim = toUnsigned(server.arg("beginDim"));
-    if (beginDim > BRIGHTNESS_MAX) beginDim = BRIGHTNESS_MAX;
+  if (server.hasArg("dimBegin")) {
+    dimBegin = toInt(server.arg("dimBegin"));
+    if (dimBegin < 0 || 24 < dimBegin) dimBegin = DIM_BEGIN_DEFAULT;
   }
-  if (server.hasArg("endDim")) {
-    endDim = toUnsigned(server.arg("endDim"));
-    if (endDim > BRIGHTNESS_MAX) endDim = BRIGHTNESS_MAX;
+  if (server.hasArg("dimEnd")) {
+    dimEnd = toInt(server.arg("dimEnd"));
+    if (dimEnd < 0 || 24 < dimEnd) dimEnd = DIM_END_DEFAULT;
+  }
+  if (server.hasArg("dimInterval")) {
+    dimInterval = toInt(server.arg("dimInterval"));
+    if (dimInterval <= 0 || DIM_INTERVAL_MAX < dimInterval) dimInterval = DIM_INTERVAL_DEFAULT;
   }
 /*
   if (server.hasArg("fgColor0")) {
@@ -492,6 +514,13 @@ RgbColor toRgbColor(const String& s) {
   s.toCharArray(buffer, 16);
   long l = strtol(&buffer[1], NULL, 16); // skip leading #
   return RgbColor((l >> 16) & 0xFF, (l >> 8) & 0xFF, (l >> 0) & 0xFF);
+}
+
+int toInt(const String& s) {
+  char buffer[16];
+  s.toCharArray(buffer, 16);
+  long l = strtol(buffer, NULL, 10);
+  return (int) l;
 }
 
 unsigned toUnsigned(const String& s) {
