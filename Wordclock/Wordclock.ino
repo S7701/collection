@@ -1,3 +1,5 @@
+// board: LOLIN(WEMOS) D1 R2 % mini
+
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
 #include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
 #include <NTPClient.h>    // https://github.com/arduino-libraries/NTPClient
@@ -5,34 +7,33 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-#define VERSION_STR "v2.1"
+#define VERSION_STR "v2.2"
 
 bool demo = false;
 
 #define NTP_ADDRESS     "de.pool.ntp.org"  // see ntp.org for ntp pools
-#define NTP_INTERVALL   3607  // seconds = ~1 hour (prime number)
+#define NTP_INTERVALL   3607  // seconds = 1:00:07 (prime number)
 #define MAX_NTP_RETRIES 24
 
 time_t ntpTime = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
 
-#define DIM_BEGIN_DEFAULT    22
-#define DIM_END_DEFAULT       5
-#define DIM_INTERVAL_DEFAULT 60
-#define DIM_INTERVAL_MAX     (6 * 60)
+#define DIM_BEGIN_DEFAULT 23
+#define DIM_END_DEFAULT   5
+#define DIM_STEP_DEFAULT  3
+#define DIM_STEP_MAX      BRIGHTNESS_MAX
 
 bool dim = true;
-int dimBegin    = DIM_BEGIN_DEFAULT;
-int dimEnd      = DIM_END_DEFAULT;
-int dimInterval = DIM_INTERVAL_DEFAULT; // minutes
+int dimBegin = DIM_BEGIN_DEFAULT;
+int dimEnd   = DIM_END_DEFAULT;
+int dimStep  = DIM_STEP_DEFAULT;
 
 #define BRIGHTNESS_MAX 100
-#define BRIGHTNESS_MIN   0
 
 unsigned brightness         = BRIGHTNESS_MAX;
-unsigned brightnessStandard = BRIGHTNESS_MAX;
-unsigned brightnessDimmed   = 10;
+unsigned brightnessStandard = 100;
+unsigned brightnessDimmed   = 1;
 
 WiFiUDP wifiUDP;
 NTPClient ntpClient(wifiUDP, NTP_ADDRESS);
@@ -230,12 +231,12 @@ void updateStrip(time_t local) {
   if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
   if (dim) {
     if (dimBegin <= hour24 || hour24 < dimEnd) {
-      if (brightness > brightnessDimmed) brightness -= (brightnessStandard - brightnessDimmed) / dimInterval;
-      if (brightness < brightnessDimmed) brightness = brightnessDimmed;
+      if (brightness - brightnessDimmed > dimStep) brightness -= dimStep;
+      else brightness = brightnessDimmed;
     }
     else {
-      if (brightness < brightnessStandard) brightness += (brightnessStandard - brightnessDimmed) / dimInterval;
-      if (brightness > brightnessStandard) brightness = brightnessStandard;
+      if (brightnessStandard - brightness > dimStep) brightness += dimStep;
+      else brightness = brightnessStandard;
     }
   }
   else if (brightness != brightnessStandard) brightness = brightnessStandard;
@@ -336,14 +337,15 @@ void handleHttpGet() {
     " Uhr bis " \
     "<input type=\"text\" name=\"dimEnd\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimEnd) +"\">" \
     " Uhr " \
+    "<br>" \
     "<input type=\"radio\" name=\"dim\" value=\"on\""+ String(dim ? " checked" : "") +">" \
     "ein " \
     "<input type=\"radio\" name=\"dim\" value=\"off\""+ String(dim ? "" : " checked") +">" \
     "aus " \
     "<br>" \
     "Auf-/abblenden in " \
-    "<input type=\"text\" name=\"dimInterval\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimInterval) +"\">" \
-    "Minuten " \
+    "<input type=\"text\" name=\"dimStep\" style=\"text-align:center\" size=\"2\" value=\""+ String(dimStep) +"\">" \
+    " % pro Minute " \
     "</p>" \
 
     "<p>" \
@@ -354,9 +356,9 @@ void handleHttpGet() {
     "aus " \
     "</p>" \
 
-/*
     "<p>" \
-    "Vordergrundfarben<br>" \
+    "Vordergrundfarben" \
+    "<br>" \
     "<input type=\"color\" name=\"fgColor0\" value=\""+ toString(fgColors[0]) +"\">" \
     "<input type=\"color\" name=\"fgColor1\" value=\""+ toString(fgColors[1]) +"\">" \
     "<input type=\"color\" name=\"fgColor2\" value=\""+ toString(fgColors[2]) +"\">" \
@@ -366,10 +368,10 @@ void handleHttpGet() {
     "</p>" \
 
     "<p>" \
-    "Hintergrundfarbe<br>" \
+    "Hintergrundfarbe" \
+    "<br>" \
     "<input type=\"color\" name=\"bgColor\" value=\""+ toString(bgColor) +"\">" \
     "</p>" \
-*/
 
     "<p>" \
     "Neustart " \
@@ -430,16 +432,12 @@ void handleHttpPost() {
   if (server.hasArg("restart")) {
     if (server.arg("restart") == "on") ESP.restart();
   }
+
   if (server.hasArg("demo")) {
     if (server.arg("demo") == "on") demo = true;
     if (server.arg("demo") == "off") demo = false;
   }
-/*
-  if (server.hasArg("brightness")) {
-    brightness = toUnsigned(server.arg("brightness"));
-    if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
-  }
-*/
+
   if (server.hasArg("brightnessStandard")) {
     brightnessStandard = toUnsigned(server.arg("brightnessStandard"));
     if (brightnessStandard > BRIGHTNESS_MAX) brightnessStandard = BRIGHTNESS_MAX;
@@ -448,6 +446,7 @@ void handleHttpPost() {
     brightnessDimmed = toUnsigned(server.arg("brightnessDimmed"));
     if (brightnessDimmed > BRIGHTNESS_MAX) brightnessDimmed = BRIGHTNESS_MAX;
   }
+
   if (server.hasArg("dim")) {
     if (server.arg("dim") == "on") dim = true;
     if (server.arg("dim") == "off") dim = false;
@@ -460,11 +459,11 @@ void handleHttpPost() {
     dimEnd = toInt(server.arg("dimEnd"));
     if (dimEnd < 0 || 24 < dimEnd) dimEnd = DIM_END_DEFAULT;
   }
-  if (server.hasArg("dimInterval")) {
-    dimInterval = toInt(server.arg("dimInterval"));
-    if (dimInterval <= 0 || DIM_INTERVAL_MAX < dimInterval) dimInterval = DIM_INTERVAL_DEFAULT;
+  if (server.hasArg("dimStep")) {
+    dimStep = toInt(server.arg("dimStep"));
+    if (dimStep <= 0 || DIM_STEP_MAX < dimStep) dimStep = DIM_STEP_DEFAULT;
   }
-/*
+
   if (server.hasArg("fgColor0")) {
     fgColors[0] = toRgbColor(server.arg("fgColor0"));
   }
@@ -486,7 +485,6 @@ void handleHttpPost() {
   if (server.hasArg("bgColor")) {
     bgColor = toRgbColor(server.arg("bgColor"));
   }
-*/
 
 #if STRIP_PIN == LED_BUILTIN
   // reinitialize LED strip
@@ -509,6 +507,19 @@ void handleHttpPost() {
   handleHttpGet();
 }
 
+void setBrightness(RgbColor& rgb) {
+  if (brightness >= BRIGHTNESS_MAX) return;
+  rgb.R = rgb.R * brightness / BRIGHTNESS_MAX;
+  rgb.G = rgb.G * brightness / BRIGHTNESS_MAX;
+  rgb.B = rgb.B * brightness / BRIGHTNESS_MAX;
+}
+
+String toString(const RgbColor& rgb) {
+  char str[8];
+  sprintf(str, "#%02X%02X%02X", rgb.R, rgb.G, rgb.B);
+  return String(str);
+}
+
 RgbColor toRgbColor(const String& s) {
   char buffer[16];
   s.toCharArray(buffer, 16);
@@ -526,19 +537,6 @@ int toInt(const String& s) {
 unsigned toUnsigned(const String& s) {
   char buffer[16];
   s.toCharArray(buffer, 16);
-  long l = strtol(buffer, NULL, 10);
+  unsigned long l = strtoul(buffer, NULL, 10);
   return (unsigned) l;
-}
-
-String toString(const RgbColor& rgb) {
-  char str[8];
-  sprintf(str, "#%02X%02X%02X", rgb.R, rgb.G, rgb.B);
-  return String(str);
-}
-
-void setBrightness(RgbColor& rgb) {
-  if (brightness >= BRIGHTNESS_MAX) return;
-  rgb.R = rgb.R * brightness / BRIGHTNESS_MAX;
-  rgb.G = rgb.G * brightness / BRIGHTNESS_MAX;
-  rgb.B = rgb.B * brightness / BRIGHTNESS_MAX;
 }
