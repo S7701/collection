@@ -1,0 +1,1 @@
+int main(int argc, int**argv){return memcmp(*argv, "test/c4_main3_ok.c", 18)&&memcmp(argv[1], "arg_test/c4_main3_ok.c", 22);}
