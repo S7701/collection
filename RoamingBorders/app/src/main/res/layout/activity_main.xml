@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <!-- Preset dropdown -->
+        <Spinner
+            android:id="@+id/spnPreset"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="5" />
+
+        <!-- Create new preset -->
+        <ImageButton
+            android:id="@+id/btnNewPreset"
+            android:src="@drawable/baseline_add_24"
+            android:contentDescription="@string/preset_new"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"/>
+
+        <!-- Copy current preset -->
+        <ImageButton
+            android:id="@+id/btnCopyPreset"
+            android:src="@drawable/baseline_content_copy_24"
+            android:contentDescription="@string/preset_copy"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <!-- Create new preset -->
+        <ImageButton
+            android:id="@+id/btnDeletePreset"
+            android:src="@drawable/baseline_delete_outline_24"
+            android:contentDescription="@string/preset_delete"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center" >
+
+        <TextView
+            android:id="@+id/listMode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="5"
+            android:layout_gravity="center"
+            android:textAlignment="center"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/swActive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/preset_active"
+            android:textAlignment="center"/>
+
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerCountries"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/recycler_border" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp">
+
+        <AutoCompleteTextView
+            android:id="@+id/actCountry"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="4"
+            android:completionThreshold="1"
+            android:hint="@string/country_hint"
+            android:singleLine="true"/>
+
+        <ImageButton
+            android:id="@+id/btnClear"
+            android:src="@drawable/outline_close_24"
+            android:contentDescription="@string/country_clear"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.5"/>
+
+        <Button
+            android:id="@+id/btnAddRemove"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="2.5"
+            android:text="@string/country_add" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp">
+
+        <Button
+            android:id="@+id/btnCommitChanges"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/changes_commit" />
+
+        <Button
+            android:id="@+id/btnDiscardChanges"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/changes_discard" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="0dp">
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/btnGuardState"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@string/app_run"
+            android:textAlignment="textEnd"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:layout_weight="4"
+            android:enabled="false"
+            android:checked="false" />
+
+        <ImageButton
+            android:id="@+id/btnInfo"
+            android:src="@drawable/outline_info_24"
+            android:contentDescription="@string/app_info"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>
