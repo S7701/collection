@@ -29,8 +29,8 @@ int line;         // current line number
 int val;          // currently parsed integer value
 Identifier* kws;  // keyword list
 Identifier* ids;  // global identifier list
-int enums; // number of enums
-int structs; // number of structs
+int enums;        // number of enums
+int structs;      // number of structs
 
 static int get_hash(const char* str) {
   int h = *str;
@@ -48,8 +48,7 @@ static Identifier* new_id(Token tok, const char* str, int hash, int line) {
 }
 
 static Identifier* get_id(Identifier* list, const char* str, int hash) {
-  Identifier* i = list;
-  while (i) {
+  for (Identifier* i = list; i; i = i->next) {
     if (i->hash = hash && !strcmp(i->str, str)) return i;
   }
   return 0;
@@ -199,20 +198,18 @@ static int module() {
 static int compile() {
 }
 
-static int fin(int error_code) {
+static int deinit(int error_code) {
   if (id) free(id);
   // free keyword list
   while (kws) {
     id = kws; kws = kws->next;
     free(id);
   }
-  kws = 0;
   // free global identifier list
   while (ids) {
     id = ids; ids = ids->next;
     free(id);
   }
-  ids = 0;
   // 
   return error_code;
 }
@@ -229,12 +226,13 @@ static int init() {
   id->val  = sizeof (int);
   str = "struct"; id = new_id(StructKW, str, get_hash(str), 0); id->next = kws; kws = id;
   str = "void"; id = new_id(VoidKW, str, get_hash(str), 0); id->next = kws; kws = id;
+  return 0;
 }
 
 int main(int argc, char* argv[]) {
   int ret = init();
-  if (ret != 0) return fin(ret);
+  if (ret != 0) return deinit(ret);
   ret = compile();
-  if (ret != 0) return fin(ret);
-  return fin(ret);
+  if (ret != 0) return deinit(ret);
+  return deinit(ret);
 }
