@@ -1,4 +1,4 @@
-// board: LOLIN(WEMOS) D1 R2 % mini
+// board: LOLIN(WEMOS) D1 R2 & mini
 
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
 #include <NeoPixelBus.h>  // https://github.com/Makuna/NeoPixelBus
@@ -7,7 +7,7 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-#define VERSION_STR "v2.2"
+#define VERSION_STR "v2.3"
 
 bool demo = false;
 
@@ -15,6 +15,7 @@ bool demo = false;
 #define NTP_INTERVALL   3607  // seconds = 1:00:07 (prime number)
 #define MAX_NTP_RETRIES 24
 
+time_t ntpFirstTime = 0;
 time_t ntpTime = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
@@ -63,7 +64,7 @@ unsigned fgColorNextWord = 0;  // index in color table for next word
 
 RgbColor bgColor(0, 0, 0); // black
 
-void setBrightness(RgbColor& rgb);
+void adjustBrightness(RgbColor& rgb);
 
 class Word {
   int from;
@@ -77,7 +78,7 @@ public:
   void show() {
     if (from >= 0) {
       RgbColor color = fgColors[fgColorNextWord];
-      setBrightness(color);
+      adjustBrightness(color);
       strip.ClearTo(color, from, to);
 
       // switch to next color in color list
@@ -133,22 +134,36 @@ Phrase phrases[] = {
   Phrase(fuenfm, vor)
 };
 
+Word hourglass[] = {
+  Word(14, "xxxxx"),
+  Word(26,  "xxx"),
+  Word(37,  "xxx"),
+  Word(49,   "x"),
+  Word(60,   "x"),
+  Word(70,  "xxx"),
+  Word(81,  "xxx"),
+  Word(91, "xxxxx")
+};
+const int hourglassRows = sizeof hourglass / sizeof hourglass[0];
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
 
+  brightness = 50;
+
   strip.Begin();
-  for (int i = 0; i < PIXEL_COUNT; ++i) {
-    strip.ClearTo(black);
-    strip.SetPixelColor(i, white);
-    strip.Show();
-  }
   strip.ClearTo(bgColor);
+  for (int i = 0; i < hourglassRows; ++i) {
+    hourglass[i].show();
+  }
   strip.Show();
+
+  brightness = BRIGHTNESS_MAX;
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(1);
+  delay(100);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
   digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
@@ -161,6 +176,8 @@ void setup() {
   setSyncProvider(getNtpTime);
   setSyncInterval(NTP_INTERVALL);  // ~1 hour
 
+  updateStrip(now());
+
   server.on("/", HTTP_GET, handleHttpGet);
   server.on("/info", HTTP_GET, handleHttpGetInfo);
   server.on("/", HTTP_POST, handleHttpPost);
@@ -169,6 +186,7 @@ void setup() {
   });
   server.begin();
 
+  ArduinoOTA.setHostname("Wordclock");
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
   });
@@ -231,15 +249,21 @@ void updateStrip(time_t local) {
   if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
   if (dim) {
     if (dimBegin <= hour24 || hour24 < dimEnd) {
-      if (brightness - brightnessDimmed > dimStep) brightness -= dimStep;
-      else brightness = brightnessDimmed;
+      if (brightness - dimStep > brightnessDimmed)
+        brightness -= dimStep;
+      else
+        brightness = brightnessDimmed;
     }
     else {
-      if (brightnessStandard - brightness > dimStep) brightness += dimStep;
-      else brightness = brightnessStandard;
+      if (brightness + dimStep < brightnessStandard)
+        brightness += dimStep;
+      else
+        brightness = brightnessStandard;
     }
   }
-  else if (brightness != brightnessStandard) brightness = brightnessStandard;
+  else {
+    if (brightness != brightnessStandard) brightness = brightnessStandard;
+  }
 
   // all phrases from "quarter" onwards refer to the next hour
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
@@ -266,7 +290,7 @@ void updateStrip(time_t local) {
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(1);
+  delay(100);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -276,7 +300,7 @@ void updateStrip(time_t local) {
 }
 
 time_t getNtpTime() {
-  if (!ntpClient.update()) {
+  if (!ntpClient.forceUpdate()) {
     ++ntpErrors;
     if (++ntpRetries == MAX_NTP_RETRIES) ESP.restart();
     return 0;
@@ -291,6 +315,11 @@ time_t getNtpTime() {
   TimeChangeRule CET = { "CET ", Last, Sun, Oct, 3, 60 };    // Central European Standard Time
   Timezone tz(CEST, CET);
   ntpTime = tz.toLocal(utc);
+
+  if (ntpFirstTime == 0) {
+    ntpFirstTime = ntpTime;
+    Serial.printf("First ");
+  }
 
   Serial.printf("NTP time: %d:%02d:%02d\n", hour(ntpTime), minute(ntpTime), second(ntpTime));
 
@@ -319,7 +348,7 @@ void handleHttpGet() {
 
     "<p>" \
     "Aktuelle Helligkeit " \
-    "<input type=\"text\" name=\"brightnessStandard\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightness) +"\" disabled>" \
+    "<input type=\"text\" name=\"brightness\" style=\"text-align:center\" size=\"3\" value=\""+ String(brightness) +"\">" \
     " % " \
     "<br>" \
     "Standard Helligkeit " \
@@ -391,9 +420,11 @@ void handleHttpGet() {
 
 void handleHttpGetInfo() {
   char curTimeStr[80];
+  char ntpFirstTimeStr[80];
   char ntpTimeStr[80];
   time_t local = now();
   sprintf(curTimeStr, "%d:%02d:%02d", hour(local), minute(local), second(local));
+  sprintf(ntpFirstTimeStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpFirstTime), month(ntpFirstTime), year(ntpFirstTime), hour(ntpFirstTime), minute(ntpFirstTime), second(ntpFirstTime));
   sprintf(ntpTimeStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
   String html =
     "<!DOCTYPE html>" \
@@ -412,6 +443,9 @@ void handleHttpGetInfo() {
     "</p>" \
 
     "<p>" \
+    "Erste NTP Aktualisierung " \
+    "<input type=\"text\"name=\"ntpFirstTimeStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpFirstTimeStr) +"\" disabled>" \
+    "<br>" \
     "Letzte NTP Aktualisierung " \
     "<input type=\"text\"name=\"ntpTimeStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpTimeStr) +"\" disabled>" \
     "<br>" \
@@ -438,6 +472,10 @@ void handleHttpPost() {
     if (server.arg("demo") == "off") demo = false;
   }
 
+  if (server.hasArg("brightness")) {
+    brightness = toUnsigned(server.arg("brightness"));
+    if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
+  }
   if (server.hasArg("brightnessStandard")) {
     brightnessStandard = toUnsigned(server.arg("brightnessStandard"));
     if (brightnessStandard > BRIGHTNESS_MAX) brightnessStandard = BRIGHTNESS_MAX;
@@ -496,7 +534,7 @@ void handleHttpPost() {
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(1);
+  delay(100);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -507,7 +545,7 @@ void handleHttpPost() {
   handleHttpGet();
 }
 
-void setBrightness(RgbColor& rgb) {
+void adjustBrightness(RgbColor& rgb) {
   if (brightness >= BRIGHTNESS_MAX) return;
   rgb.R = rgb.R * brightness / BRIGHTNESS_MAX;
   rgb.G = rgb.G * brightness / BRIGHTNESS_MAX;
