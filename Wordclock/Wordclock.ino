@@ -7,7 +7,7 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-#define VERSION_STR "v2.3"
+#define VERSION_STR "v2.4"
 
 bool demo = false;
 
@@ -64,8 +64,6 @@ unsigned fgColorNextWord = 0;  // index in color table for next word
 
 RgbColor bgColor(0, 0, 0); // black
 
-void adjustBrightness(RgbColor& rgb);
-
 class Word {
   int from;
   int to;
@@ -78,7 +76,12 @@ public:
   void show() {
     if (from >= 0) {
       RgbColor color = fgColors[fgColorNextWord];
-      adjustBrightness(color);
+      if (brightness < BRIGHTNESS_MAX) {
+        color.R = color.R * brightness / BRIGHTNESS_MAX;
+        color.G = color.G * brightness / BRIGHTNESS_MAX;
+        color.B = color.B * brightness / BRIGHTNESS_MAX;
+      }
+
       strip.ClearTo(color, from, to);
 
       // switch to next color in color list
@@ -163,7 +166,7 @@ void setup() {
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(100);
+  delay(10);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
   digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by setting the output HIGH
@@ -226,6 +229,7 @@ void loop() {
   switch (state) {
   case 0: // Wait for the first second of a minute
     if (second(local) == 0) {
+      updateBrightness(local);
       updateStrip(local);
       state = 1;
     }
@@ -238,24 +242,19 @@ void loop() {
   delay(333); // ms
 }
 
-void updateStrip(time_t local) {
-  int hour12 = hourFormat12(local);  // 1...12 (0?)
+void updateBrightness(time_t local) {
   int hour24 = hour(local);          // 1...24 (0?)
-  int minute5 = minute(local) / 5;   // 0...11
-
-  Serial.printf("Show time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
 
   // adjust brightness if necessary
-  if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
   if (dim) {
     if (dimBegin <= hour24 || hour24 < dimEnd) {
-      if (brightness - dimStep > brightnessDimmed)
+      if (brightness - brightnessDimmed > dimStep)
         brightness -= dimStep;
       else
         brightness = brightnessDimmed;
     }
     else {
-      if (brightness + dimStep < brightnessStandard)
+      if (brightnessStandard - brightness > dimStep)
         brightness += dimStep;
       else
         brightness = brightnessStandard;
@@ -264,6 +263,14 @@ void updateStrip(time_t local) {
   else {
     if (brightness != brightnessStandard) brightness = brightnessStandard;
   }
+}
+
+void updateStrip(time_t local) {
+  int hour12 = hourFormat12(local);  // 1...12 (0?)
+  int minute5 = minute(local) / 5;   // 0...11
+
+  Serial.printf("Show time: %d:%02d:%02d\n", hour(local), minute(local), second(local));
+  if (brightness > BRIGHTNESS_MAX) brightness = BRIGHTNESS_MAX;
 
   // all phrases from "quarter" onwards refer to the next hour
   if (minute5 >= 3) ++hour12;  // 1...13 (0?)
@@ -290,7 +297,7 @@ void updateStrip(time_t local) {
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(100);
+  delay(10);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -534,7 +541,7 @@ void handleHttpPost() {
 
 #if STRIP_PIN == LED_BUILTIN
   // let the strip update
-  delay(100);
+  delay(10);
   // turn the builtin LED off by setting the output HIGH
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -543,13 +550,6 @@ void handleHttpPost() {
   if (!demo) updateStrip(now());
 
   handleHttpGet();
-}
-
-void adjustBrightness(RgbColor& rgb) {
-  if (brightness >= BRIGHTNESS_MAX) return;
-  rgb.R = rgb.R * brightness / BRIGHTNESS_MAX;
-  rgb.G = rgb.G * brightness / BRIGHTNESS_MAX;
-  rgb.B = rgb.B * brightness / BRIGHTNESS_MAX;
 }
 
 String toString(const RgbColor& rgb) {
