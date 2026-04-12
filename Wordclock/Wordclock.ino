@@ -7,7 +7,7 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-#define VERSION_STR "v2.5"
+#define VERSION_STR "v2.6"
 
 bool demo = false;
 
@@ -47,8 +47,10 @@ ESP8266WebServer server(80);  // instantiate server at port 80 (http port)
 
 NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1800KbpsMethod> strip(PIXEL_COUNT, STRIP_PIN);
 
+bool multicolored = false;
+
 RgbColor black(0, 0, 0);
-RgbColor white(255, 255, 255);
+RgbColor white(85, 85, 85);
 
 RgbColor fgColors[] = {
   RgbColor(255, 0, 0),   // red
@@ -63,7 +65,8 @@ const unsigned fgColorCount = sizeof fgColors / sizeof fgColors[0];
 unsigned fgColorFirstWord = 0; // index in color table for first word
 unsigned fgColorNextWord = 0;  // index in color table for next word
 
-RgbColor bgColor(0, 0, 0); // black
+RgbColor fgColor(white);
+RgbColor bgColor(black);
 
 class Word {
   int from;
@@ -76,7 +79,7 @@ public:
 
   void show() {
     if (from >= 0) {
-      RgbColor color = fgColors[fgColorNextWord];
+      RgbColor color = multicolored ? fgColors[fgColorNextWord] : fgColor;
       if (brightness < BRIGHTNESS_MAX) {
         color.R = color.R * brightness / BRIGHTNESS_MAX;
         color.G = color.G * brightness / BRIGHTNESS_MAX;
@@ -395,7 +398,15 @@ void handleHttpGet() {
     "</p>" \
 
     "<p>" \
-    "Vordergrundfarben" \
+    "Mehrfarbig" \
+    "<input type=\"radio\" name=\"multicolored\" value=\"on\""+ String(multicolored ? " checked" : "") +">" \
+    "ein " \
+    "<input type=\"radio\" name=\"multicolored\" value=\"off\""+ String(multicolored ? "" : " checked") +">" \
+    "aus " \
+    "</p>" \
+
+    "<p>" \
+    "Vordergrundfarben (mehrfarbig)" \
     "<br>" \
     "<input type=\"color\" name=\"fgColor0\" value=\""+ toString(fgColors[0]) +"\">" \
     "<input type=\"color\" name=\"fgColor1\" value=\""+ toString(fgColors[1]) +"\">" \
@@ -403,6 +414,12 @@ void handleHttpGet() {
     "<input type=\"color\" name=\"fgColor3\" value=\""+ toString(fgColors[3]) +"\">" \
     "<input type=\"color\" name=\"fgColor4\" value=\""+ toString(fgColors[4]) +"\">" \
     "<input type=\"color\" name=\"fgColor5\" value=\""+ toString(fgColors[5]) +"\">" \
+    "</p>" \
+
+    "<p>" \
+    "Vordergrundfarbe (einfarbig)" \
+    "<br>" \
+    "<input type=\"color\" name=\"fgColor\" value=\""+ toString(fgColor) +"\">" \
     "</p>" \
 
     "<p>" \
@@ -516,6 +533,11 @@ void handleHttpPost() {
     if (dimStep <= 0 || DIM_STEP_MAX < dimStep) dimStep = DIM_STEP_DEFAULT;
   }
 
+  if (server.hasArg("multicolored")) {
+    if (server.arg("multicolored") == "on") multicolored = true;
+    if (server.arg("multicolored") == "off") multicolored = false;
+  }
+
   if (server.hasArg("fgColor0")) {
     fgColors[0] = toRgbColor(server.arg("fgColor0"));
   }
@@ -533,6 +555,9 @@ void handleHttpPost() {
   }
   if (server.hasArg("fgColor5")) {
     fgColors[5] = toRgbColor(server.arg("fgColor5"));
+  }
+  if (server.hasArg("fgColor")) {
+    fgColor = toRgbColor(server.arg("fgColor"));
   }
   if (server.hasArg("bgColor")) {
     bgColor = toRgbColor(server.arg("bgColor"));
