@@ -7,16 +7,17 @@
 #include <Timezone.h>     // https://github.com/JChristensen/Timezone
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
-#define VERSION_STR "v2.4"
+#define VERSION_STR "v2.5"
 
 bool demo = false;
 
 #define NTP_ADDRESS     "de.pool.ntp.org"  // see ntp.org for ntp pools
 #define NTP_INTERVALL   3607  // seconds = 1:00:07 (prime number)
-#define MAX_NTP_RETRIES 24
+#define MAX_NTP_RETRIES 256
 
 time_t ntpFirstTime = 0;
 time_t ntpTime = 0;
+time_t ntpTimeFailed = 0;
 unsigned ntpErrors = 0;
 unsigned ntpRetries = 0;
 
@@ -308,8 +309,9 @@ void updateStrip(time_t local) {
 
 time_t getNtpTime() {
   if (!ntpClient.forceUpdate()) {
+    ntpTimeFailed = now();
     ++ntpErrors;
-    if (++ntpRetries == MAX_NTP_RETRIES) ESP.restart();
+    if (++ntpRetries >= MAX_NTP_RETRIES) ESP.restart();
     return 0;
   }
 
@@ -429,10 +431,12 @@ void handleHttpGetInfo() {
   char curTimeStr[80];
   char ntpFirstTimeStr[80];
   char ntpTimeStr[80];
+  char ntpTimeFailedStr[80];
   time_t local = now();
   sprintf(curTimeStr, "%d:%02d:%02d", hour(local), minute(local), second(local));
   sprintf(ntpFirstTimeStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpFirstTime), month(ntpFirstTime), year(ntpFirstTime), hour(ntpFirstTime), minute(ntpFirstTime), second(ntpFirstTime));
   sprintf(ntpTimeStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpTime), month(ntpTime), year(ntpTime), hour(ntpTime), minute(ntpTime), second(ntpTime));
+  sprintf(ntpTimeFailedStr, "%02d.%02d.%d %d:%02d:%02d", day(ntpTimeFailed), month(ntpTimeFailed), year(ntpTimeFailed), hour(ntpTimeFailed), minute(ntpTimeFailed), second(ntpTimeFailed));
   String html =
     "<!DOCTYPE html>" \
     "<html>" \
@@ -453,8 +457,11 @@ void handleHttpGetInfo() {
     "Erste NTP Aktualisierung " \
     "<input type=\"text\"name=\"ntpFirstTimeStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpFirstTimeStr) +"\" disabled>" \
     "<br>" \
-    "Letzte NTP Aktualisierung " \
+    "Letzte erfolgreiche NTP Aktualisierung " \
     "<input type=\"text\"name=\"ntpTimeStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpTimeStr) +"\" disabled>" \
+    "<br>" \
+    "Letzte erfolglose NTP Aktualisierung " \
+    "<input type=\"text\"name=\"ntpTimeFailedStr\"  style=\"text-align:center\" size=\"19\" value=\""+ String(ntpTimeFailedStr) +"\" disabled>" \
     "<br>" \
     "Gesamt erfolglose NTP Aktualisierungen (NTP Errors) " \
     "<input type=\"text\" name=\"ntpErrors\" style=\"text-align:center\" size=\"2\" value=\""+ String(ntpErrors) +"\" disabled>" \
