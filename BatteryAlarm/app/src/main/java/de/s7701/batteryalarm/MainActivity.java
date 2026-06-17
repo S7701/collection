@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -67,7 +68,7 @@ public class MainActivity extends AppCompatActivity {
         progressValueTextView = findViewById(R.id.progressValueTextView);
         imageView=findViewById(R.id.imageView1);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-        mediaPlayer = MediaPlayer.create(this, R.raw.clock_alarm_extended_copy);
+        mediaPlayer = MediaPlayer.create(this, R.raw.clock_alarm_extended_copy, new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build(), 0);
 
         batteryReceiver = new BatteryReceiver();
         registerBatteryReceiver();
@@ -112,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (plugged == BatteryManager.BATTERY_PLUGGED_AC || plugged == BatteryManager.BATTERY_PLUGGED_USB || plugged==BatteryManager.BATTERY_PLUGGED_WIRELESS || plugged==BatteryManager.BATTERY_PLUGGED_DOCK) {
                     // The device is charging
-                    if (batteryLevel > selectedBatteryLevel) {
+                    if (batteryLevel >= selectedBatteryLevel) {
                         startAlarm();
                         startVibration();
                         showBatteryAlert();
@@ -235,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
 
                     float voltTemp=(float) (intent.getIntExtra("voltage",0)*0.001);
 
-                    voltage.setText(voltTemp+"v");
+                    voltage.setText(voltTemp+" V");
 
                     setHealth(intent);
 
@@ -245,7 +246,7 @@ public class MainActivity extends AppCompatActivity {
 
                     float temp=(float) intent.getIntExtra("temperature",-1)/10;
 
-                    temperature.setText(temp+"°");
+                    temperature.setText(temp+"° C");
 
                     setChargingStatus(intent);
                 }
@@ -322,7 +323,7 @@ public class MainActivity extends AppCompatActivity {
 
     protected void onStart() {
         super.onStart();
-        registerReceiver(batteryBroadcast,intentFilter);
+        registerReceiver(batteryBroadcast, intentFilter);
     }
 
     @Override
