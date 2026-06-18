@@ -1,4 +1,4 @@
-// c8.c - C in eight functions
+// c9.c - C in nine functions
 //   no enum identifiers allowd
 
 // Based on c4.c - C in four functions
@@ -16,11 +16,11 @@ char *p, *lp, *tp, // current/line/token position in source code
      *fn;          // filename
 
 int *e, *le, *code, // current/line position in emitted code
-    *stack,         // 
+    *stack,         //
     *sym,           // symbol table (simple list of identifiers)
     *id,            // currently parsed identifier
     *n, *ast,       // current node in abstract syntax tree
-    *idmain,        // 
+    *idmain,        //
     tk,             // current token
     ival,           // current token value
     ty,             // current expression type
@@ -38,7 +38,7 @@ enum {
 // opcodes (IMM...ADJ have parameter)
 enum {
   IMM, LEA, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
-  OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD, 
+  OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
   OPEN, READ, WRITE, CLOSE, PRINTF, SCANF, MALLOC, FREE, MEMSET, MEMCMP, MEMCPY, SBRK, BRK, EXIT
 };
 
@@ -49,6 +49,11 @@ enum { CHAR, INT, PTR };
 enum { Tk, Hash, Name, Len, Class, Type, Val, HClass, HType, HVal, IdSz };
 
 enum { SymSz = 1024*IdSz, PoolSz = 256*1024, CodeSz = PoolSz, DataSz = PoolSz, StackSz = PoolSz, AstSz = PoolSz, SrcSz = PoolSz };
+
+void error(char *msg) {
+  printf("%s:%d:%d: %s\n", fn, line, tp - lp + 1, msg);
+  exit(-1);
+}
 
 void next() {
   char *pp;
@@ -76,7 +81,7 @@ void next() {
       id = sym;
       while (id[Tk]) {
         if (tk == id[Hash] && !memcmp((char *)id[Name], pp, p - pp)) { tk = id[Tk]; return; }
-        id = id + IdSz; if (id >= sym + SymSz) { printf("%s:%d:%d: FATAL: symbol table overflow!\n", fn, line, tp - lp + 1); exit(-1); }
+        id = id + IdSz; if (id >= sym + SymSz) error("FATAL: symbol table overflow!");
       }
       id[Hash] = tk;
       id[Name] = (int)pp;
@@ -142,7 +147,7 @@ int match(int _tk) {
 void expr(int lev) {
   int *_id, i, _ty, *_n, *pp;
 
-  if (!tk) { printf("%s:%d:%d: unexpected eof in expression\n", fn, line, tp - lp + 1); exit(-1); }
+  if (!tk) error("unexpected eof in expression");
   else if (tk == Num) {
     *--n = ival; *--n = Num; next();
     ty = INT;
@@ -153,23 +158,23 @@ void expr(int lev) {
     d = (char *)(((int)d + sizeof(int)) & -sizeof(int)); ty = PTR;
   }
   else if (match(Sizeof)) {
-    if (!match('(')) { printf("%s:%d:%d: '(' expected in sizeof\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match('(')) error("'(' expected in sizeof");
     if (match(Int)) ty = INT;
     else if (match(Char)) { ty = CHAR; }
-    else { printf("%s:%d:%d: type expected in sizeof\n", fn, line, tp - lp + 1); exit(-1); }
+    else error("type expected in sizeof");
     while (match(Mul)) ty = ty + PTR;
-    if (!match(')')) { printf("%s:%d:%d: ')' expected in sizeof\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match(')')) error("')' expected in sizeof");
     *--n = (ty == CHAR) ? sizeof(char) : sizeof(int); *--n = Num;
     ty = INT;
   }
   else if (tk == Id) {
     _id = id; next();
     if (match('(')) {
-      if (_id[Class] != Sys && _id[Class] != Fun) { printf("%s:%d:%d: bad function call\n", fn, line, tp - lp + 1); exit(-1); }
+      if (_id[Class] != Sys && _id[Class] != Fun) error("bad function call");
       i = 0; pp = 0;
       while (!match(')')) {
         expr(Assign); *--n = (int)pp; pp = n; ++i;
-        if (!match(',') && tk != ')') { printf("%s:%d:%d: ',' or ')' expected in function call\n", fn, line, tp - lp + 1); exit(-1); }
+        if (!match(',') && tk != ')') error("',' or ')' expected in function call");
       }
       *--n = i; *--n = _id[Val]; *--n = (int)pp; *--n = _id[Class];
       ty = _id[Type];
@@ -181,7 +186,7 @@ void expr(int lev) {
     else {
       if (_id[Class] == Local) { *--n = _id[Val]; *--n = Local; }
       else if (_id[Class] == Global) { *--n = _id[Val]; *--n = Num; }
-      else { printf("%s:%d:%d: undefined variable\n", fn, line, tp - lp + 1); exit(-1); }
+      else error("undefined variable");
       *--n = ty = _id[Type]; *--n = Load;
     }
   }
@@ -189,25 +194,25 @@ void expr(int lev) {
     if (tk == Int || tk == Char) {
       _ty = (tk == Int) ? INT : CHAR; next();
       while (match(Mul)) _ty = _ty + PTR;
-      if (!match(')')) { printf("%s:%d:%d: bad cast\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match(')')) error("bad cast");
       expr(Inc);
       ty = _ty;
     }
     else {
       expr(Assign);
-      if (!match(')')) { printf("%s:%d:%d: ')' expected\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match(')')) error("')' expected");
     }
   }
   else if (match(Mul)) {
     expr(Inc);
     if (ty > INT) ty = ty - PTR;
-    else { printf("%s:%d:%d: bad dereference\n", fn, line, tp - lp + 1); exit(-1); }
+    else error("bad dereference");
     *--n = ty; *--n = Load;
   }
   else if (match(And)) {
     expr(Inc);
     if (*n == Load) n = n+2;
-    else { printf("%s:%d:%d: bad address-of\n", fn, line, tp - lp + 1); exit(-1); }
+    else error("bad address-of");
     ty = ty + PTR;
   }
   else if (match('!')) {
@@ -231,20 +236,20 @@ void expr(int lev) {
     i = tk; next();
     expr(Inc);
     if (*n == Load) *n = i;
-    else { printf("%s:%d:%d: bad lvalue in pre-increment\n", fn, line, tp - lp + 1); exit(-1); }
+    else error("bad lvalue in pre-increment");
   }
-  else { printf("%s:%d:%d: bad expression\n", fn, line, tp - lp + 1); exit(-1); }
+  else error("bad expression");
 
   while (tk >= lev) { // "precedence climbing" or "Top Down Operator Precedence" method
     _ty = ty; _n = n;
     if (match(Assign)) {
-      if (*n != Load) { printf("%s:%d:%d: bad lvalue in assignment\n", fn, line, tp - lp + 1); exit(-1); }
+      if (*n != Load) error("bad lvalue in assignment");
       expr(Assign);
       *--n = (int)(_n+2); *--n = ty = _ty; *--n = Assign;
     }
     else if (match(Cond)) {
       expr(Assign);
-      if (!match(':')) { printf("%s:%d:%d: conditional missing colon\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match(':')) error("conditional missing colon");
       pp = n;
       expr(Cond);
       --n; *n = (int)(n+1); *--n = (int)pp; *--n = (int)_n; *--n = Cond;
@@ -264,7 +269,7 @@ void expr(int lev) {
     else if (match(Shr))  { expr(Add);  if (*n==Num && *_n==Num) n[1] = _n[1] >> n[1]; else { *--n = (int)_n; *--n = Shr;  } ty = INT; }
     else if (match(Add)) {
       expr(Mul);
-      if (ty >= PTR) { printf("%s:%d:%d: bad pointer addition\n", fn, line, tp - lp + 1); exit(-1); }
+      if (ty >= PTR) error("bad pointer addition");
       if (_ty > PTR) {
         if (*n == Num) n[1] = n[1] * sizeof(int); // lhs > PTR && rhs == Num
         else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } // lhs > PTR && rhs != Num
@@ -274,8 +279,8 @@ void expr(int lev) {
     }
     else if (match(Sub)) {
       expr(Mul);
-      if (_ty < PTR && ty >= PTR) { printf("%s:%d:%d: bad pointer subtraction\n", fn, line, tp - lp + 1); exit(-1); }
-      if (_ty >= PTR && ty >= PTR && _ty != ty) { printf("%s:%d:%d: bad pointer types in subtraction\n", fn, line, tp - lp + 1); exit(-1); }
+      if (_ty < PTR && ty >= PTR) error("bad pointer subtraction");
+      if (_ty >= PTR && ty >= PTR && _ty != ty) error("bad pointer types in subtraction");
       if (_ty > PTR) {
         if (*n == Num) n[1] = n[1] * sizeof(int);
         else if (_ty != ty) { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; }
@@ -292,14 +297,14 @@ void expr(int lev) {
     else if (match(Mod)) { expr(Inc); if (*n==Num && *_n==Num) n[1] = _n[1] % n[1]; else { *--n = (int)_n; *--n = Mod; } ty = INT; }
     else if (tk == Inc || tk == Dec) {
       if (*n == Load) *n = tk;
-      else { printf("%s:%d:%d: bad lvalue in post-increment\n", fn, line, tp - lp + 1); exit(-1); }
+      else error("bad lvalue in post-increment");
       *--n = (ty > PTR) ? sizeof(int) : sizeof(char); *--n = Num;
       *--n = (int)_n; *--n = (tk == Inc) ? Sub : Add; next();
     }
     else if (match(Bracket)) {
-      if (_ty < PTR) { printf("%s:%d:%d: pointer type expected\n", fn, line, tp - lp + 1); exit(-1); }
+      if (_ty < PTR) error("pointer type expected");
       expr(Assign);
-      if (!match(']')) { printf("%s:%d:%d: ']' expected\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match(']')) error("']' expected");
       if (_ty > PTR) { if (*n == Num) n[1] = n[1] * sizeof(int); else { *--n = sizeof(int); *--n = Num; --n; *n = (int)(n+3); *--n = Mul; } }
       if (*n == Num && *_n == Num) n[1] = _n[1] + n[1]; else { *--n = (int)_n; *--n = Add; }
       *--n = ty = _ty - PTR; *--n = Load;
@@ -312,23 +317,23 @@ void stmt() {
   int *n1, *n2, *n3;
 
   if (match(If)) {
-    if (!match('(')) { printf("%s:%d:%d: '(' expected in if\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match('(')) error("'(' expected in if");
     expr(Assign); n1 = n;
-    if (!match(')')) { printf("%s:%d:%d: ')' expected in if\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match(')')) error("')' expected in if");
     stmt(); n2 = n;
     if (match(Else)) { stmt(); n3 = n; } else n3 = 0;
     *--n = (int)n3; *--n = (int)n2; *--n = (int)n1; *--n = Cond;
   }
   else if (match(While)) {
-    if (!match('(')) { printf("%s:%d:%d: '(' expected in while\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match('(')) error("'(' expected in while");
     expr(Assign); n1 = n;
-    if (!match(')')) { printf("%s:%d:%d: ')' expected in while\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match(')')) error("')' expected in while");
     stmt();
     *--n = (int)n1; *--n = While;
   }
   else if (match(Return)) {
     if (tk != ';') { expr(Assign); n1 = n; } else n1 = 0;
-    if (!match(';')) { printf("%s:%d:%d: ';' expected in return\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match(';')) error("';' expected in return");
     *--n = (int)n1; *--n = Return;
   }
   else if (match('{')) {
@@ -340,15 +345,15 @@ void stmt() {
   }
   else {
     expr(Assign);
-    if (!match(';')) { printf("%s:%d:%d: ';' expected\n", fn, line, tp - lp + 1); exit(-1); }
+    if (!match(';')) error("';' expected");
   }
 }
 
 void gen(int *n) { // hide global n
   int i, *pp;
 
-  if (n < ast) { printf("%s:%d:%d: FATAL: abstract syntax tree overflow\n", fn, line, tp - lp + 1); exit(-1); }
-  if (e >= code + CodeSz) { printf("%s:%d:%d: FATAL: code buffer overflow\n", fn, line, tp - lp + 1); exit(-1); }
+  if (n < ast) error("FATAL: abstract syntax tree overflow");
+  if (e >= code + CodeSz) error("FATAL: code buffer overflow");
 
   i = *n;
   if (i == Num) { *++e = IMM; *++e = n[1]; }
@@ -361,7 +366,7 @@ void gen(int *n) { // hide global n
     *++e = IMM; *++e = (n[1] > PTR) ? sizeof(int) : sizeof(char);
     *++e = (i == Inc) ? ADD : SUB;
     *++e = (n[1] == CHAR) ? SC : SI;
-  }  
+  }
   else if (i == Cond) {
     gen((int *)n[1]);
     *++e = BZ; pp = ++e;
@@ -424,30 +429,30 @@ void parse() {
     bt = INT; // basetype
     if (match(Char)) bt = CHAR;
     else if (match(Enum)) {
-      if (!match('{')) { printf("%s:%d:%d: bad enum definition\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match('{')) error("bad enum definition");
       i = 0;
       while (!match('}')) {
-        if (tk != Id) { printf("%s:%d:%d: bad enum identifier\n", fn, line, tp - lp + 1); exit(-1); }
-        if (id[Class]) { printf("%s:%d:%d: duplicate enum identifier\n", fn, line, tp - lp + 1); exit(-1); }
+        if (tk != Id) error("bad enum identifier");
+        if (id[Class]) error("duplicate enum identifier");
         _id = id; next();
         if (match(Assign)) {
           n = top;
           expr(Cond);
-          if (*n != Num) { printf("%s:%d:%d: bad enum initializer\n", fn, line, tp - lp + 1); exit(-1); }
+          if (*n != Num) error("bad enum initializer");
           i = n[1];
         }
         _id[Class] = Num; _id[Type] = INT; _id[Val] = i++;
-        if (!match(',') && tk != '}') { printf("%s:%d:%d: ',' or '}' expected in enum declaration\n", fn, line, tp - lp + 1); exit(-1); }
+        if (!match(',') && tk != '}') error("',' or '}' expected in enum declaration");
       }
     }
-    else if (!match(Int)) { printf("%s:%d:%d: type expected\n", fn, line, tp - lp + 1); exit(-1); }
+    else if (!match(Int)) error("type expected");
 
     while (!match(';')) {
       ty = bt;
       while (match(Mul)) ty = ty + PTR;
 
-      if (tk != Id) { printf("%s:%d:%d: bad global declaration\n", fn, line, tp - lp + 1); exit(-1); }
-      if (id[Class]) { printf("%s:%d:%d: duplicate global definition\n", fn, line, tp - lp + 1); exit(-1); }
+      if (tk != Id) error("bad global declaration");
+      if (id[Class]) error("duplicate global definition");
       id[Type] = ty;
       _id = id; next();
 
@@ -459,41 +464,41 @@ void parse() {
         while (!match(')')) { // parameter list
           if (match(Int)) ty = INT;
           else if (match(Char)) ty = CHAR;
-          else { printf("%s:%d:%d: parameter type expected\n", fn, line, tp - lp + 1); exit(-1); }
+          else error("parameter type expected");
           while (match(Mul))ty = ty + PTR;
-          if (tk != Id) { printf("%s:%d:%d: bad parameter declaration\n", fn, line, tp - lp + 1); exit(-1); }
-          if (id[Class] == Local) { printf("%s:%d:%d: duplicate parameter definition\n", fn, line, tp - lp + 1); exit(-1); }
+          if (tk != Id) error("bad parameter declaration");
+          if (id[Class] == Local) error("duplicate parameter definition");
           id[HClass] = id[Class]; id[Class] = Local;
           id[HType]  = id[Type];  id[Type]  = ty;
           id[HVal]   = id[Val];   id[Val]   = i++;
           next();
-          if (!match(',') && tk != ')') { printf("%s:%d:%d: ',' or ')' expected in parameter declaration\n", fn, line, tp - lp + 1); exit(-1); }
+          if (!match(',') && tk != ')') error("',' or ')' expected in parameter declaration");
         }
 
-        if (!match('{')) { printf("%s:%d:%d: bad function definition\n", fn, line, tp - lp + 1); exit(-1); }
+        if (!match('{')) error("bad function definition");
         i = 0;
         while (tk == Int || tk == Char) { // local variable
           bt = (tk == Int) ? INT : CHAR; next();
           while (!match(';')) {
             ty = bt;
             while (match(Mul)) ty = ty + PTR;
-            if (tk != Id) { printf("%s:%d:%d: bad local declaration\n", fn, line, tp - lp + 1); exit(-1); }
-            if (id[Class] == Local) { printf("%s:%d:%d: duplicate local definition\n", fn, line, tp - lp + 1); exit(-1); }
+            if (tk != Id) error("bad local declaration");
+            if (id[Class] == Local) error("duplicate local definition");
             _id = id; next();
             if (match(Bracket)) {
               n = top;
               expr(Cond);
-              if (*n != Num) { printf("%s:%d:%d: bad local array initializer\n", fn, line, tp - lp + 1); exit(-1); }
+              if (*n != Num) error("bad local array initializer");
               i = i - ((ty == CHAR) ? ((n[1] + sizeof (int) - 1) & -sizeof (int))/sizeof (int) : n[1]);
               ty = ty + PTR;
               if (dbg) printf("i:%d, ty:#%d\n", i, ty);
-              if (!match(']')) { printf("%s:%d:%d: ']' expected in local array declaration\n", fn, line, tp - lp + 1); exit(-1); }
+              if (!match(']')) error("']' expected in local array declaration");
             }
             else --i;
             _id[HClass] = _id[Class]; _id[Class] = Local;
             _id[HType]  = _id[Type];  _id[Type]  = ty;
             _id[HVal]   = _id[Val];   _id[Val]   = i;
-            if (!match(',') && tk != ';') { printf("%s:%d:%d: ',' or ';' expected in local declaration\n", fn, line, tp - lp + 1); exit(-1); }
+            if (!match(',') && tk != ';') error("',' or ';' expected in local declaration");
           }
         }
         n = top;
@@ -519,16 +524,16 @@ void parse() {
         if (match(Bracket)) { // array
           n = top;
           expr(Cond);
-          if (*n != Num) { printf("%s:%d:%d: bad global array initializer\n", fn, line, tp - lp + 1); exit(-1); }
+          if (*n != Num) error("bad global array initializer");
           d = d + ((_id[Type] == CHAR) ? (n[1] + sizeof (int) - 1) & -sizeof (int) : n[1] * sizeof(int));
           _id[Type] = _id[Type] + PTR;
           if (dbg) printf("_id[Type]:#%d\n", _id[Type]);
-          if (!match(']')) { printf("%s:%d:%d: ']' expected in global array declaration\n", fn, line, tp - lp + 1); exit(-1); }
+          if (!match(']')) error("']' expected in global array declaration");
         }
         else d = d + sizeof(int);
       }
 
-      if (!match(',') && tk != ';') { printf("%s:%d:%d: ',' or ';' expected\n", fn, line, tp - lp + 1); exit(-1); }
+      if (!match(',') && tk != ';') error("',' or ';' expected");
     }
   }
 
@@ -624,7 +629,7 @@ int main(int argc, char **argv) {
   --argc; ++argv;
   if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { dbg = 1; --argc; ++argv; }
-  if (argc < 1) { printf("usage: c8 [-s] [-d] file ...\n"); return -1; }
+  if (argc < 1) { printf("usage: c9 [-s] [-d] file ...\n"); return -1; }
 
   fn = *argv;
 
