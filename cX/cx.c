@@ -1,4 +1,4 @@
-// c4.c - C in a few functions
+// cx.c - C in a few functions
 
 // char, int, structs, pointer types and enums
 // if, while, return and expression statements
@@ -9,7 +9,7 @@
 // Based on c4.c - C in four functions
 // Written by Robert Swierczek
 
-// Compile with 'gcc [-Wall] -m32 -o c4+ c4+.c'
+// Compile with 'gcc [-Wall] -m32 -o cx cx.c'
 
 #include <unistd.h> // for read, write, close
 #include <stdio.h>  // for printf, sprintf, scanf, sscanf
@@ -18,20 +18,20 @@
 #include <fcntl.h>  // for open
 
 char *p, *lp, *tp, // current/line/token position in source code
-     *d,      // data pointer
-     *ops,    // opcodes
-     *fn;     // filename
+     *d, *data,    // data pointer
+     *ops,         // opcodes
+     *fn;          // filename
 
-int *e, *le,  // current/line position in emitted code
-    tk,       // current token
-    tkval,    // current token value
-    ty,       // current expression type
-    tynew,    // next available type
-    *tysz,    // array (indexed by type) of type sizes
-    loc,      // local variable offset
-    line,     // current line number
-    src,      // print source and assembly flag
-    dbg;      // print executed instructions
+int *e, *le, *code, // current/line position in emitted code
+    tk,             // current token
+    tk_val,         // current token value
+    ty,             // current expression type
+    ty_next,        // next available type
+    *ty_sz,         // array (indexed by type) of type sizes
+    loc,            // local variable offset
+    line,           // current line number
+    src,            // print source and assembly flag
+    dbg;            // print executed instructions
 
 // identifier
 struct ident_s {
@@ -44,11 +44,9 @@ struct ident_s {
   int type;
   int val;
   int stype;  // struct type
-  int sline;  // struct def line
   int hclass; // hidden class
   int htype;  // hidden type
   int hval;   // hidden value
-  int hline;  // hidden line
 } *id,  // currently parsed identifier
   *sym; // symbol table (simple list of identifiers)
 
@@ -70,7 +68,7 @@ enum {
 enum {
   IMM, LEA, JMP, JSR, BZ, BNZ, ENTER, ADJ, LEAVE, LI, LC, SI, SC, PUSH,
   OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
-  OPEN, READ, WRITE, CLOSE, PRINTF, SCANF, FPRINTF, FSCANF, MALLOC, FREE, MEMSET, MEMCMP, MEMCPY, EXIT
+  OPEN, READ, WRITE, CLOSE, PRINTF, SCANF, SPRINTF, SSCANF, MALLOC, FREE, MEMSET, MEMCMP, MEMCPY, EXIT
 };
 
 // types
@@ -79,7 +77,7 @@ enum { CHAR, INT, PTR = 1000, PTR2 = 2000 };
 // constants
 enum { CODE_SZ = 1000000, DATA_SZ = 1000000, STACK_SZ = 1000000, SYM_SZ = 10000, SRC_SZ = 1000000 };
 
-char *e2s(int x) {
+char *enum2str(int x) {
   char *str;
 
   if (0 <= x && x < 32) {
@@ -87,7 +85,7 @@ char *e2s(int x) {
           "0x10\0 0x11\0 0x12\0 0x13\0 0x14\0 0x15\0 0x16\0 0x17\0 0x18\0 0x19\0 0x1A\0 0x1B\0 0x1C\0 0x1D\0 0x1E\0 0x1F\0 ";
     return &str[x * 6];
   }
-  if (32 <= x && x <= 126) { str = (char *)&tkval; memcpy(str, "' '", 4); str[1] = (char)x; return str; } // printable
+  if (32 <= x && x <= 126) { str = (char *)&tk_val; memcpy(str, "' '", 4); str[1] = (char)x; return str; } // printable
   if (x == 127)  { return "DEL"; }
   if (Num <= x && x <= Id) {
     str = "num\0   fun\0   sys\0   global\0local\0 id\0     ";
@@ -137,16 +135,16 @@ void next() {
       return;
     }
     else if (tk >= '0' && tk <= '9') { // number
-      tkval = tk - '0';
-      if (tkval) { while (*p >= '0' && *p <= '9') tkval = tkval * 10 + *p++ - '0'; } // decimal
+      tk_val = tk - '0';
+      if (tk_val) { while (*p >= '0' && *p <= '9') tk_val = tk_val * 10 + *p++ - '0'; } // decimal
       else if (*p == 'x' || *p == 'X') { // hexadecimal
         tk = *++p;
         while (tk && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F'))) {
-          tkval = tkval * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
+          tk_val = tk_val * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
           tk = *++p;
         }
       }
-      else { while (*p >= '0' && *p <= '7') tkval = tkval * 8 + *p++ - '0'; } // octal
+      else { while (*p >= '0' && *p <= '7') tk_val = tk_val * 8 + *p++ - '0'; } // octal
       tk = Num;
       return;
     }
@@ -163,20 +161,20 @@ void next() {
     else if (tk == '\'' || tk == '"') { // string or character literal
       pp = d;
       while (*p != 0 && *p != tk) {
-        tkval = *p++;
-        if (tkval == '\\') {
-          tkval = *p++;
-          if      (tkval == '0') tkval = '\0';
-          else if (tkval == 't') tkval = '\t';
-          else if (tkval == 'v') tkval = '\v';
-          else if (tkval == 'f') tkval = '\f';
-          else if (tkval == 'r') tkval = '\r';
-          else if (tkval == 'n') tkval = '\n';
+        tk_val = *p++;
+        if (tk_val == '\\') {
+          tk_val = *p++;
+          if      (tk_val == '0') tk_val = '\0';
+          else if (tk_val == 't') tk_val = '\t';
+          else if (tk_val == 'v') tk_val = '\v';
+          else if (tk_val == 'f') tk_val = '\f';
+          else if (tk_val == 'r') tk_val = '\r';
+          else if (tk_val == 'n') tk_val = '\n';
         }
-        if (tk == '"') *d++ = tkval;
+        if (tk == '"') *d++ = tk_val;
       }
       ++p; // skip '\'' or '"'
-      if (tk == '"') tkval = (int)pp;
+      if (tk == '"') tk_val = (int)pp;
       else tk = Num;
       return;
     }
@@ -211,31 +209,31 @@ void expr(int lev) {
 
   if (!tk) { printf("%s:%d:%d: bad expr: unexpected eof\n", fn, line, tp - lp + 1); exit(-1); }
   else if (tk == Num) { // number or character literal
-    *++e = IMM; *++e = tkval;
+    *++e = IMM; *++e = tk_val;
     next();
     ty = INT;
   }
   else if (tk == '"') { // string literal
-    *++e = IMM; *++e = tkval;
+    *++e = IMM; *++e = tk_val;
     next();
     while (match('"')) ; // concatenate string literals
     d = (char *)(((int)d + sizeof (int)) & -sizeof (int)); // align
     ty = PTR;
   }
   else if (match(Sizeof)) { // sizeof expr
-    if (!match('(')) { printf("%s:%d:%d: bad sizeof expr: '(' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match('(')) { printf("%s:%d:%d: bad sizeof expr: '(' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     if (match(Char)) ty = CHAR;
     else if (match(Int)) ty = INT;
     else if (match(Struct)) {
-      if (tk != Id) { printf("%s:%d:%d: bad sizeof expr: struct id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (tk != Id) { printf("%s:%d:%d: bad sizeof expr: struct id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       if (!id->stype) { printf("%s:%d:%d: bad sizeof expr: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, id->len, id->name); exit(-1); }
       ty = id->stype;
       next();
     }
-    else { printf("%s:%d:%d: bad sizeof expr: type expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    else { printf("%s:%d:%d: bad sizeof expr: type expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     while (match(Mul)) ty = ty + PTR;
-    if (!match(')')) { printf("%s:%d:%d: bad sizeof expr: ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
-    *++e = IMM; *++e = ty >= PTR ? sizeof (int) : tysz[ty];
+    if (!match(')')) { printf("%s:%d:%d: bad sizeof expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+    *++e = IMM; *++e = ty >= PTR ? sizeof (int) : ty_sz[ty];
     ty = INT;
   }
   else if (tk == Id) { // identifier
@@ -246,12 +244,12 @@ void expr(int lev) {
       while (!match(')')) { // fun args
         expr(Cond);
         *++e = PUSH; ++i;
-        if (!match(',') && tk != ')') { printf("%s:%d:%d: bad fun call: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+        if (!match(',') && tk != ')') { printf("%s:%d:%d: bad fun call: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       }
       if (s->class == Sys) *++e = s->val;
       else if (s->class == Fun) { *++e = JSR; *++e = s->val; }
       else if (s->class == 0) { printf("%s:%d:%d: bad fun arg: '%.*s' not def'ed\n", fn, line, tp - lp + 1, s->len, s->name); exit(-1); }
-      else { printf("%s:%d:%d: bad fun arg: unexpected class '%s' of id '%.*s'; def'ed in line %d\n", fn, line, tp - lp + 1, e2s(s->class), s->len, s->name, s->line); exit(-1); }
+      else { printf("%s:%d:%d: bad fun arg: unexpected class '%s' of id '%.*s'; def'ed in line %d\n", fn, line, tp - lp + 1, enum2str(s->class), s->len, s->name, s->line); exit(-1); }
       if (i) { *++e = ADJ; *++e = i; } // stack adjust after fun call
       ty = s->type;
     }
@@ -260,7 +258,7 @@ void expr(int lev) {
       if (s->class == Local) { *++e = LEA; *++e = loc - s->val; } // local var
       else if (s->class == Global) { *++e = IMM; *++e = s->val; }  // global var
       else if (s->class == 0) { printf("%s:%d:%d: bad var expr: '%.*s' not def'ed\n", fn, line, tp - lp + 1, s->len, s->name); exit(-1); }
-      else { printf("%s:%d:%d: bad var expr: unexpected class '%s' of id '%.*s'; def'ed in line %d\n", fn, line, tp - lp + 1, e2s(s->class), s->len, s->name, s->line); exit(-1); }
+      else { printf("%s:%d:%d: bad var expr: unexpected class '%s' of id '%.*s'; def'ed in line %d\n", fn, line, tp - lp + 1, enum2str(s->class), s->len, s->name, s->line); exit(-1); }
       ty = s->type;
       if (ty <= INT || ty >= PTR) *++e = (ty == CHAR) ? LC : LI;
     }
@@ -271,19 +269,19 @@ void expr(int lev) {
       else if (match(Int)) i = INT;
       else { // struct
         next();
-        if (tk != Id) { printf("%s:%d:%d: bad typecast expr: struct id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+        if (tk != Id) { printf("%s:%d:%d: bad typecast expr: struct id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
         if (!id->stype) { printf("%s:%d:%d: bad typecast expr: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, id->len, id->name); exit(-1); }
         i = id->stype;
         next();
       }
       while (match(Mul)) i = i + PTR;
-      if (!match(')')) { printf("%s:%d:%d: bad typecast expr: ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (!match(')')) { printf("%s:%d:%d: bad typecast expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       expr(Inc);
       ty = i;
     }
     else { // group expr
       expr(Cond);
-      if (!match(')')) { printf("%s:%d:%d: bad expr: ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (!match(')')) { printf("%s:%d:%d: bad expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     }
   }
   else if (match(Mul)) { // unary dereference expr
@@ -302,7 +300,7 @@ void expr(int lev) {
   else if (match(Add)) { expr(Inc); ty = INT; } // unary plus expr
   else if (match(Sub)) { // unary minus expr
     *++e = IMM;
-    if (tk == Num) { *++e = -tkval; next(); }
+    if (tk == Num) { *++e = -tk_val; next(); }
     else { *++e = 0; *++e = PUSH; expr(Inc); *++e = SUB; }
     ty = INT;
   }
@@ -314,11 +312,11 @@ void expr(int lev) {
     else if (*e == LI) { *e = PUSH; *++e = LI; }
     else { printf("%s:%d:%d: bad pre-incr/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, &ops[*e * 8]); exit(-1); }
     *++e = PUSH;
-    *++e = IMM; *++e = ty >= PTR2 ? sizeof (int) : (ty >= PTR) ? tysz[ty - PTR] : 1;
+    *++e = IMM; *++e = ty >= PTR2 ? sizeof (int) : (ty >= PTR) ? ty_sz[ty - PTR] : 1;
     *++e = (i == Inc) ? ADD : SUB;
     *++e = (ty == CHAR) ? SC : SI;
   }
-  else { printf("%s:%d:%d: bad unary/prefix expr: got unexpected token %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+  else { printf("%s:%d:%d: bad unary/prefix expr: got unexpected token %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
 
   while (tk >= lev) { // "precedence climbing" or "Top Down Operator Precedence" method
     i = ty;
@@ -331,7 +329,7 @@ void expr(int lev) {
     else if (match(Cond)) { // conditional expr
       *++e = BZ; pp = ++e;
       expr(Cond);
-      if (!match(':')) { printf("%s:%d:%d: bad cond expr: ':' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (!match(':')) { printf("%s:%d:%d: bad cond expr: ':' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       *pp = (int)(e + 3); *++e = JMP; pp = ++e;
       expr(Cond);
       *pp = (int)(e + 1);
@@ -353,7 +351,7 @@ void expr(int lev) {
       *++e = PUSH;
       expr(Mul);
       if (i >= PTR && ty >= PTR) { printf("%s:%d:%d: bad add expr: ptr + ptr not allowed\n", fn, line, tp - lp + 1); exit(-1); }
-      sz = i >= PTR2 ? sizeof (int) : i >= PTR ? tysz[i - PTR] : 1;
+      sz = i >= PTR2 ? sizeof (int) : i >= PTR ? ty_sz[i - PTR] : 1;
       if (sz > 1) { *++e = PUSH; *++e = IMM; *++e = sz; *++e = MUL;  }
       *++e = ADD;
       ty = i;
@@ -362,7 +360,7 @@ void expr(int lev) {
       *++e = PUSH;
       expr(Mul);
       if (i < PTR && ty >= PTR) { printf("%s:%d:%d: bad sub expr: num - ptr not allowed\n", fn, line, tp - lp + 1); exit(-1); }
-      sz = i >= PTR2 ? sizeof (int) : i >= PTR ? tysz[i - PTR] : 1;
+      sz = i >= PTR2 ? sizeof (int) : i >= PTR ? ty_sz[i - PTR] : 1;
       if (i == ty && sz > 1) { *++e = SUB; *++e = PUSH; *++e = IMM; *++e = sz; *++e = DIV; ty = INT; }
       else if (sz > 1) { *++e = PUSH; *++e = IMM; *++e = sz; *++e = MUL; *++e = SUB; }
       else *++e = SUB;
@@ -375,7 +373,7 @@ void expr(int lev) {
       if (*e == LC) { *e = PUSH; *++e = LC; }
       else if (*e == LI) { *e = PUSH; *++e = LI; }
       else { printf("%s:%d:%d: bad post-inc/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, &ops[*e * 8]); exit(-1); }
-      sz = ty >= PTR2 ? sizeof (int) : ty >= PTR ? tysz[ty - PTR] : 1;
+      sz = ty >= PTR2 ? sizeof (int) : ty >= PTR ? ty_sz[ty - PTR] : 1;
       *++e = PUSH; *++e = IMM; *++e = sz;
       *++e = (tk == Inc) ? ADD : SUB;
       *++e = (ty == CHAR) ? SC : SI;
@@ -387,7 +385,7 @@ void expr(int lev) {
       if (tk == Dot) ty = ty + PTR;
       next();
       if (ty <= PTR + INT || ty >= PTR2) { printf("%s:%d:%d: bad struct member expr: expected lhs expr type #%d...#%d; got #%d\n", fn, line, tp - lp + 1, PTR + INT + 1, PTR2 - 1, ty); exit(-1); }
-      if (tk != Id) { printf("%s:%d:%d: bad struct member expr: member id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (tk != Id) { printf("%s:%d:%d: bad struct member expr: member id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       m = members[ty - PTR]; while (m && m->id != id) m = m->next; // search struct member
       if (!m) { printf("%s:%d:%d: struct member not def'ed\n", fn, line, tp - lp + 1); exit(-1); }
       if (m->offset) { *++e = PUSH; *++e = IMM; *++e = m->offset; *++e = ADD; }
@@ -398,15 +396,15 @@ void expr(int lev) {
     else if (match(Bracket)) { // array element expr
       *++e = PUSH;
       expr(Cond);
-      if (!match(']')) { printf("%s:%d:%d: bad array element expr: ']' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+      if (!match(']')) { printf("%s:%d:%d: bad array element expr: ']' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       if (i < PTR) { printf("%s:%d:%d: bad array element expr: lhs pointer type expected; got type #%d\n", fn, line, tp - lp + 1, i); exit(-1); }
-      i = i - PTR; sz = i >= PTR ? sizeof (int) : tysz[i];
+      i = i - PTR; sz = i >= PTR ? sizeof (int) : ty_sz[i];
       if (sz > 1) { *++e = PUSH; *++e = IMM; *++e = sz; *++e = MUL;  }
       *++e = ADD;
       ty = i;
       if (ty <= INT || ty >= PTR) *++e = (ty == CHAR) ? LC : LI;
     }
-    else { printf("%s:%d:%d: bad binary/postfix expr: got unexpected token %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    else { printf("%s:%d:%d: bad binary/postfix expr: got unexpected token %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   }
 }
 
@@ -414,9 +412,9 @@ void stmt() {
   int *a, *b;
 
   if (match(If)) {
-    if (!match('(')) { printf("%s:%d:%d: bad if stmt: '(' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match('(')) { printf("%s:%d:%d: bad if stmt: '(' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     expr(Cond);
-    if (!match(')')) { printf("%s:%d:%d: bad if stmt: ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match(')')) { printf("%s:%d:%d: bad if stmt: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     *++e = BZ; b = ++e;
     stmt();
     if (match(Else)) {
@@ -427,9 +425,9 @@ void stmt() {
   }
   else if (match(While)) {
     a = e + 1;
-    if (!match('(')) { printf("%s:%d:%d: bad while stmt: '(' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match('(')) { printf("%s:%d:%d: bad while stmt: '(' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     expr(Cond);
-    if (!match(')')) { printf("%s:%d:%d: bad while stmt: ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match(')')) { printf("%s:%d:%d: bad while stmt: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     *++e = BZ; b = ++e;
     stmt();
     *++e = JMP; *++e = (int)a;
@@ -437,7 +435,7 @@ void stmt() {
   }
   else if (match(Return)) {
     if (tk != ';') expr(Cond);
-    if (!match(';')) { printf("%s:%d:%d: bad return stmt: ';' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match(';')) { printf("%s:%d:%d: bad return stmt: ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     *++e = LEAVE;
   }
   else if (match('{')) {
@@ -448,72 +446,78 @@ void stmt() {
   }
   else {
     expr(Assign);
-    if (!match(';')) { printf("%s:%d:%d: bad assign stmt: ';' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match(';')) { printf("%s:%d:%d: bad assign stmt: ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   }
 }
 
-int parse_enum() {
+int enum_def() {
   int i;
   struct ident_s *enum_id;
 
   // no enum identifier allowed!
-  if (!match('{')) { printf("%s:%d:%d: bad enum def: '{' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+  if (!match('{')) { printf("%s:%d:%d: bad enum def: '{' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   i = 0;
   while (i == 0 || !match('}')) { // at least one enum id required
-    if (tk != Id) { printf("%s:%d:%d: bad enum def: enum id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (tk != Id) { printf("%s:%d:%d: bad enum def: enum id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     if (id->class) { printf("%s:%d:%d: duplicate enum id '%.*s'; already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->line); exit(-1); }
     enum_id = id;
     next();
     if (match(Assign)) {
-      if (tk != Num) { printf("%s:%d:%d: bad enum def: num initializer expected after '='; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
-      i = tkval;
+      if (tk != Num) { printf("%s:%d:%d: bad enum def: num initializer expected after '='; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+      i = tk_val;
       next();
     }
     enum_id->line = line;
     enum_id->class = Num;
     enum_id->type = INT;
     enum_id->val = i++;
-    if (!match(',') && tk != '}') { printf("%s:%d:%d: bad enum def: ',' or '}' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+    if (!match(',') && tk != '}') { printf("%s:%d:%d: bad enum def: ',' or '}' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   }
   return INT;
 }
 
-int parse_struct() {
-  int bt, i;
+int type(char *msg) {
+  int t;
+
+  if (match(Char)) t = CHAR;
+  else if (match(Int)) t = INT;
+  else if (match(Struct)) {
+    if (tk != Id) { printf("%s:%d:%d: bad %s: struct id expected; got %s\n", fn, line, tp - lp + 1, msg, enum2str(tk)); exit(-1); }
+    if (!id->stype) { printf("%s:%d:%d: bad %s: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, msg, id->len, id->name); exit(-1); }
+    t = id->stype;
+    next();
+  }
+  else { printf("%s:%d:%d: bad %s: type expected; got %s\n", fn, line, tp - lp + 1, msg, enum2str(tk)); exit(-1); }
+  return t;
+}
+
+int struct_def() {
+  int i, bt, mbt;
   struct member_s *m;
 
   if (tk == Id) { // struct id
-    if (!id->stype) { id->stype = tynew++; id->sline = line; }
+    if (!id->stype) id->stype = ty_next++;
     bt = id->stype;
     //printf("DBG struct decl: '%.*s' ty:#%d\n", id->len, id->name, id->stype);
     next();
   } else { // anonymous struct
-    bt = tynew++;
+    bt = ty_next++;
     //printf("DBG anonymous struct decl: ty:#%d\n", bt);
   }
-  if (tynew >= PTR) { printf("%s:%d:%d: FATAL: too many structs\n", fn, line, tp - lp + 1); exit(-1); }
+  if (ty_next >= PTR) { printf("%s:%d:%d: FATAL: too many structs\n", fn, line, tp - lp + 1); exit(-1); }
   if (tk == '{') { // struct def
-    if (members[bt]) { printf("%s:%d:%d: duplicate struct '%.*s'; already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->sline); exit(-1); }
+    if (members[bt]) { printf("%s:%d:%d: duplicate struct '%.*s'\n", fn, line, tp - lp + 1, id->len, id->name); exit(-1); }
     next();
     i = 0;
     while (!i || !match('}')) { // struct member def
-      // member base type
-      if (match(Char)) mbt = CHAR;
-      else if (match(Int)) mbt = INT;
-      else if (match(Struct)) {
-        if (tk != Id) { printf("%s:%d:%d: bad struct member def: struct id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
-        if (!id->stype) { printf("%s:%d:%d: bad struct member def: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, id->len, id->name); exit(-1); }
-        mbt = id->stype;
-        next();
-      }
-      else { printf("%s:%d:%d: bad struct member def: member type expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
-
+      mbt = type("struct member def");
       m = 0;
       while (!m || !match(';')) { // at least one struct member required
         ty = mbt;
         while (match(Mul)) ty = ty + PTR;
-        if (tk != Id) { printf("%s:%d:%d: bad struct member def: member id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
-        // TODO: struct member already defined?
+        if (tk != Id) { printf("%s:%d:%d: bad struct member def: member id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+        m = members[bt]; while (m && m->id != id) m = m->next; // search struct member
+        if (m) { printf("%s:%d:%d: duplicate struct member '%.*s'\n", fn, line, tp - lp + 1, id->len, id->name); exit(-1); }
         if (ty > CHAR) i = (i + sizeof (int) - 1) & -sizeof (int); // align non-CHAR members
         m = malloc(sizeof (struct member_s));
         m->id = id;
@@ -521,17 +525,17 @@ int parse_struct() {
         m->type = ty;
         m->next = members[bt];
         members[bt] = m;
-        i = i + (ty >= PTR ? sizeof (int) : tysz[ty]);
+        i = i + (ty >= PTR ? sizeof (int) : ty_sz[ty]);
         next();
-        if (!match(',') && tk != ';') { printf("%s:%d:%d: bad struct member def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); exit(-1); }
+        if (!match(',') && tk != ';') { printf("%s:%d:%d: bad struct member def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       }
     }
-    tysz[bt] = (i + sizeof (int) - 1) & -sizeof (int);
+    ty_sz[bt] = (i + sizeof (int) - 1) & -sizeof (int);
   }
   return bt;
 }
 
-void parse_func(struct ident_s *func_id) {
+void func_def(struct ident_s *func_id) {
   int i, bt;
 
   func_id->class = Fun;
@@ -542,65 +546,45 @@ void parse_func(struct ident_s *func_id) {
   // func args
   i = 0;
   while (!match(')')) {
-    if (match(Char)) ty = CHAR;
-    else if (match(Int)) ty = INT;
-    else if (match(Struct)) {
-      if (tk != Id) { printf("%s:%d:%d: bad arg def: struct id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-      if (!id->stype) { printf("%s:%d:%d: bad arg def: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, id->len, id->name); return -1; }
-      ty = id->stype;
-      next();
-    }
-    else { printf("%s:%d:%d: bad arg def: arg type expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-
+    ty = type("arg def");
     while (match(Mul)) ty = ty + PTR;
-    if (tk != Id) { printf("%s:%d:%d: bad arg def: arg id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-    if (id->class == Local) { printf("%s:%d:%d: duplicate arg '%.*s': already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->line); return -1; }
-    if (ty > INT && ty < PTR) i = i + tysz[ty]/sizeof (int) - 1; // adjust for structs
+    if (tk != Id) { printf("%s:%d:%d: bad arg def: arg id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+    if (id->class == Local) { printf("%s:%d:%d: duplicate arg '%.*s': already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->line); exit(-1); }
+    if (ty > INT && ty < PTR) i = i + ty_sz[ty]/sizeof (int) - 1; // adjust for structs
     id->hclass = id->class; id->class = Local;
     id->htype = id->type; id->type = ty;
     id->hval = id->val; id->val = i++;
-    id->hline = id->line; id->line = line;
-    //printf("DBG arg def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? tysz[id->type] : sizeof (int), id->val);
+    //printf("DBG arg def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? ty_sz[id->type] : sizeof (int), id->val);
     next();
-    if (!match(',') && tk != ')') { printf("%s:%d:%d: bad arg def: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
+    if (!match(',') && tk != ')') { printf("%s:%d:%d: bad arg def: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   }
-  if (!match('{')) { printf("%s:%d:%d: bad func def: '{' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
+  if (!match('{')) { printf("%s:%d:%d: bad func def: '{' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
 
   // local vars
   loc = ++i;
   while (tk == Char || tk == Int || tk == Struct) {
-    if (match(Char)) bt = CHAR;
-    else if (match(Int)) bt = INT;
-    else { // struct
-      next();
-      if (tk != Id) { printf("%s:%d:%d: bad local def; struct id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-      if (!id->stype) { printf("%s:%d:%d: bad local def: struct '%.*s' not def'ed\n", fn, line, tp - lp + 1, id->len, id->name); return -1; }
-      bt = id->stype;
-      next();
-    }
-
+    bt = type("local def");
     ty = 0;
     while (!ty || !match(';')) { // at least one local var required
       ty = bt;
       while (match(Mul)) ty = ty + PTR;
 
-      if (tk != Id) { printf("%s:%d:%d: bad local def; local id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-      if (id->class == Local) { printf("%s:%d:%d: duplicate local '%.*s': already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->line); return -1; }
-      if (ty > INT && ty < PTR) i = i + tysz[ty]/sizeof (int) - 1; // adjust for structs
+      if (tk != Id) { printf("%s:%d:%d: bad local def; local id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+      if (id->class == Local) { printf("%s:%d:%d: duplicate local '%.*s': already def'ed in line %d\n", fn, line, tp - lp + 1, id->len, id->name, id->line); exit(-1); }
+      if (ty > INT && ty < PTR) i = i + ty_sz[ty]/sizeof (int) - 1; // adjust for structs
       id->hclass = id->class; id->class = Local;
       id->htype = id->type; id->type = ty;
       id->hval = id->val; id->val = ++i;
-      id->hline = id->line; id->line = line;
-      //printf("DBG local def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? tysz[id->type] : sizeof (int), id->val);
+      //printf("DBG local def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? ty_sz[id->type] : sizeof (int), id->val);
       next();
-      if (!match(',') && tk != ';') { printf("%s:%d:%d: bad local def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
+      if (!match(',') && tk != ';') { printf("%s:%d:%d: bad local def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     }
   }
 
   // func body
-  *++e = ENTER; *++e = i - loc; // TODO: pp = ++e;
+  *++e = ENTER; *++e = i - loc;
   while (tk != '}') stmt();
-  *++e = LEAVE; // TODO: *pp = loc_ofs_max
+  *++e = LEAVE;
 
   // unwind symbol table locals
   id = sym;
@@ -609,62 +593,21 @@ void parse_func(struct ident_s *func_id) {
       id->class = id->hclass;
       id->type = id->htype;
       id->val = id->hval;
-      id->line = id->hline;
     }
     ++id;
   }
 }
 
-int main(int argc, char **argv) {
-  int *code, *stack;
-  char *data;
-  int fd, bt;
-  struct ident_s *idmain;
-  int *pc, *sp, *bp, a, cycle; // vm registers
-  int i, *pp; // temps
+void parse() {
+  int fd, bt, sz;
+  char *s;
 
-  --argc; ++argv;
-  if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
-  if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { dbg = 1; --argc; ++argv; }
-  if (argc < 1) { printf("usage: c4 [-s] [-d] [-v] file ...\n"); return -1; }
-
-  fn = *argv;
-  fd = open(fn, 0); if (fd < 0) { printf("could not open(%s)\n", *argv); return -1; }
-
-  le = e = code = malloc(CODE_SZ * sizeof (int)); if (!code) { printf("could not alloc code segment\n"); return -1; }
-  d = data = malloc(DATA_SZ); if (!data) { printf("could not alloc data segment\n"); return -1; }
-  sp = stack = malloc(STACK_SZ * sizeof (int)); if (!stack) { printf("could not alloc stack segment\n"); return -1; }
-  sym = malloc(SYM_SZ * sizeof (struct ident_s)); if (!sym) { printf("could not alloc symbol table\n"); return -1; }
-  tysz = malloc(PTR * sizeof (int)); if (!tysz) { printf("could not alloc type size array\n"); return -1; }
-  members = malloc(PTR * sizeof (struct member_s *)); if (!members) { printf("could not alloc members array\n"); return -1; }
-
-  memset(code,  0, CODE_SZ * sizeof (int));
-  memset(data,  0, DATA_SZ);
-  memset(stack, 0, STACK_SZ * sizeof (int));
-  memset(sym,   0, SYM_SZ * sizeof (struct ident_s));
-  memset(tysz,   0, PTR * sizeof (int));
-  memset(members, 0, PTR * sizeof (struct member_s *));
-
-  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
-        "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
-        "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 SCANF\0  FPRINTF\0FSCANF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCMP\0 MEMCPY\0 EXIT\0   ";
-
-  p = "char else enum if int return sizeof struct while "
-      "open read write close printf scanf fprintf fscanf malloc free memset memcmp memcpy exit "
-      "void main";
-  i = Char; while (i <= While) { next(); id->tk = i++; } // add keywords to symbol table
-  i = OPEN; while (i <= EXIT) { next(); id->class = Sys; id->type = INT; id->val = i++; } // add library to symbol table
-  next(); id->tk = Char; // handle void type
-  next(); idmain = id; // keep track of main
-
-  lp = p = malloc(SRC_SZ); if (!p) { printf("could not alloc source buffer\n"); return -1; }
-  i = read(fd, p, SRC_SZ-1); if (i <= 0) { printf("%s: read() returned %d\n", fn, i); return -1; }
-  p[i] = 0;
+  // read source file
+  fd = open(fn, 0); if (fd < 0) { printf("could not open '%s'; error %d\n", fn, fd); exit(-1); }
+  lp = p = s = malloc(SRC_SZ); if (!s) { printf("could not alloc source buffer\n"); exit(-1); }
+  sz = read(fd, p, SRC_SZ-1); if (sz <= 0) { printf("could not read '%s'; error %d\n", fn, sz); exit(-1); }
+  p[sz] = 0;
   close(fd);
-
-  // add primitive types
-  tysz[tynew++] = sizeof (char);
-  tysz[tynew++] = sizeof (int);
 
   // parse defs
   line = 1;
@@ -673,42 +616,49 @@ int main(int argc, char **argv) {
     // basetype
     if (match(Char)) bt = CHAR;
     else if (match(Int)) bt = INT;
-    else if (match(Enum)) bt = parse_enum();
-    else if (match(Struct)) bt = parse_struct();
-    else { printf("%s:%d:%d: bad def: type expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
+    else if (match(Enum)) bt = enum_def();
+    else if (match(Struct)) bt = struct_def();
+    else { printf("%s:%d:%d: bad def: type expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
 
     while (!match(';')) {
       ty = bt;
       while (match(Mul)) ty = ty + PTR; // pointer declarator
-      if (ty > INT && ty < PTR && !members[ty]) { printf("%s:%d:%d: bad def: struct not def'ed, only decl'ed\n", fn, line, tp - lp + 1); return -1; }
-      if (tk != Id) { printf("%s:%d:%d: bad def: global id expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
-      if (id->class) { printf("%s:%d:%d: duplicate global '%.*s'; already def'ed as %s in line %d\n", fn, line, tp - lp + 1, id->len, id->name, e2s(id->class), id->line); return -1; }
+      if (ty > INT && ty < PTR && !members[ty]) { printf("%s:%d:%d: bad def: struct not def'ed, only decl'ed\n", fn, line, tp - lp + 1); exit(-1); }
+      if (tk != Id) { printf("%s:%d:%d: bad def: global id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+      if (id->class) { printf("%s:%d:%d: duplicate global '%.*s'; already def'ed as %s in line %d\n", fn, line, tp - lp + 1, id->len, id->name, enum2str(id->class), id->line); exit(-1); }
       id->type = ty;
       id->line = line;
       next();
       if (tk == '(') { // func def
-        parse_func(id);
+        func_def(id);
         tk = ';'; // leave inner while loop
       }
       else { // global var
         if (id->type > CHAR) d = (char *)(((int)d + sizeof (int) - 1) & -sizeof (int)); // align non-CHAR globals
         id->class = Global;
         id->val = (int)d;
-        //printf("DBG global def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? tysz[id->type] : sizeof (int), d - data);
-        d = d + (ty >= PTR ? sizeof (int) : tysz[id->type]);
+        //printf("DBG global def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? ty_sz[id->type] : sizeof (int), d - data);
+        d = d + (ty >= PTR ? sizeof (int) : ty_sz[id->type]);
       }
-      if (!match(',') && tk != ';') { printf("%s:%d:%d: bad global def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, e2s(tk)); return -1; }
+      if (!match(',') && tk != ';') { printf("%s:%d:%d: bad global def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     }
   }
 
-  pc = (int *)idmain->val; if (!pc) { printf("main() not def'ed\n"); return -1; }
-  if (src) return 0;
+  free(s);
+}
+
+int run(int *pc, int argc, char **argv) {
+  int *stack, *sp, *bp, a, cycle; // vm registers
+  int i, *pp; // temps
+
+  stack = malloc(STACK_SZ * sizeof (int)); if (!stack) { printf("could not alloc stack segment\n"); return -1; }
+  memset(stack, 0, STACK_SZ * sizeof (int));
 
   // call exit if main returns
   *++e = PUSH; pp = e;
   *++e = EXIT;
   // setup stack
-  bp = sp = (int *)((int)sp + STACK_SZ);
+  bp = sp = stack + STACK_SZ;
   *--sp = argc;
   *--sp = (int)argv;
   *--sp = (int)pp;
@@ -717,12 +667,13 @@ int main(int argc, char **argv) {
   a = cycle = 0;
   while (1) {
     i = *pc++; ++cycle;
+    if (pc < code || pc >= code + CODE_SZ) { printf("FATAL: code buffer overflow (pc %p, code %p, CODE_SZ 0x%08x)\n", pc, code, CODE_SZ); exit(-1); }
+    if (d >= data + DATA_SZ) { printf("FATAL: data buffer overflow (pc %p, d %p, data %p, DATA_SZ 0x%08x)\n", pc, d, data, DATA_SZ); exit(-1); }
+    if (sp < stack || sp >= stack + STACK_SZ) { printf("FATAL: stack overflow (pc %p, sp %p, stack %p, STACK_SZ 0x%08x)\n", pc, sp, stack, STACK_SZ); exit(-1); }
     if (dbg) {
       printf("%d> %s", cycle, &ops[i * 8]);
       if (i <= ADJ) printf(" %d (0x%08X)\n", *pc, *pc); else printf("\n");
     }
-    if (d >= data + DATA_SZ) { printf("FATAL: data buffer overflow (pc %p, d %p, data %p, DATA_SZ 0x%08x)\n", pc, d, data, DATA_SZ); exit(-1); }
-    if (sp < stack || sp >= stack + STACK_SZ) { printf("FATAL: stack overflow (pc %p, sp %p, stack %p, STACK_SZ 0x%08x)\n", pc, sp, stack, STACK_SZ); exit(-1); }
 
     if      (i == IMM)   a = *pc++;                                         // load global address or immediate
     else if (i == LEA)   a = (int)(bp + *pc++);                             // load local address
@@ -756,20 +707,82 @@ int main(int argc, char **argv) {
     else if (i == DIV) a = *sp++ /  a;
     else if (i == MOD) a = *sp++ %  a;
 
-    else if (i == OPEN)   a = open((char *)sp[1], *sp);
-    else if (i == READ)   a = read(sp[2], (char *)sp[1], *sp);
-    else if (i == WRITE)  a = write(sp[2], (char *)sp[1], *sp);
-    else if (i == CLOSE)  a = close(*sp);
-    else if (i == PRINTF) { pp = sp + pc[1]; a = printf((char *)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
-    else if (i == SCANF)  { pp = sp + pc[1]; a = scanf((char *)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
-    else if (i == MALLOC) a = (int)malloc(*sp);
-    else if (i == FREE)   { a = *sp; free((void *)a); }
-    else if (i == MEMSET) a = (int)memset((char *)sp[2], sp[1], *sp);
-    else if (i == MEMCMP) a = memcmp((char *)sp[2], (char *)sp[1], *sp);
-    else if (i == MEMCPY) a = (int)memcpy((char *)sp[2], (char *)sp[1], *sp);
-    else if (i == EXIT)   { if (dbg) printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
+    else if (i == OPEN)    a = open((char *)sp[1], *sp);
+    else if (i == READ)    a = read(sp[2], (char *)sp[1], *sp);
+    else if (i == WRITE)   a = write(sp[2], (char *)sp[1], *sp);
+    else if (i == CLOSE)   a = close(*sp);
+    else if (i == PRINTF)  { pp = sp + pc[1]; a = printf((char *)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == SCANF)   { pp = sp + pc[1]; a = scanf((char *)pp[-1], pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == SPRINTF) { pp = sp + pc[1]; a = sprintf((char *)pp[-1], (char *)pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == SSCANF)  { pp = sp + pc[1]; a = sscanf((char *)pp[-1], (char *)pp[-2], pp[-3], pp[-4], pp[-5], pp[-6], pp[-7], pp[-8]); }
+    else if (i == MALLOC)  a = (int)malloc(*sp);
+    else if (i == FREE)    { a = *sp; free((void *)a); }
+    else if (i == MEMSET)  a = (int)memset((char *)sp[2], sp[1], *sp);
+    else if (i == MEMCMP)  a = memcmp((char *)sp[2], (char *)sp[1], *sp);
+    else if (i == MEMCPY)  a = (int)memcpy((char *)sp[2], (char *)sp[1], *sp);
+    else if (i == EXIT)    { if (dbg) printf("exit(%d) cycle = %d\n", *sp, cycle); i = *sp; free(stack); return i; }
 
-    else { printf("unknown instruction %d! cycle = %d\n", i, cycle); return -1; }
+    else { printf("unknown instruction %d! cycle = %d\n", i, cycle); exit(-1); }
   }
+  free(stack);
   return -1;
+}
+
+int main(int argc, char **argv) {
+  int i, *pc;
+  struct ident_s *idmain;
+
+  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
+        "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
+        "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 SCANF\0  SPRINTF\0SSCANF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCMP\0 MEMCPY\0 EXIT\0   ";
+
+  fn = "<init>";
+
+  sym = malloc(SYM_SZ * sizeof (struct ident_s)); if (!sym) { printf("could not alloc symbol table\n"); return -1; }
+  memset(sym, 0, SYM_SZ * sizeof (struct ident_s));
+
+  p = "char else enum if int return sizeof struct while "
+      "open read write close printf scanf sprintf sscanf malloc free memset memcmp memcpy exit "
+      "void main";
+  i = Char; while (i <= While) { next(); id->tk = i++; } // add keywords to symbol table
+  i = OPEN; while (i <= EXIT) { next(); id->class = Sys; id->type = INT; id->val = i++; } // add library to symbol table
+  next(); id->tk = Char; // handle void type
+  next(); idmain = id; // keep track of main
+
+  ty_sz = malloc(PTR * sizeof (int)); if (!ty_sz) { printf("could not alloc type size array\n"); return -1; }
+  memset(ty_sz, 0, PTR * sizeof (int));
+  members = malloc(PTR * sizeof (struct member_s *)); if (!members) { printf("could not alloc members array\n"); return -1; }
+  memset(members, 0, PTR * sizeof (struct member_s *));
+
+  // add primitive types
+  ty_sz[ty_next++] = sizeof (char);
+  ty_sz[ty_next++] = sizeof (int);
+
+  e = le = code = malloc(CODE_SZ * sizeof (int)); if (!code) { printf("could not alloc code segment\n"); return -1; }
+  memset(code, 0, CODE_SZ * sizeof (int));
+  d = data = malloc(DATA_SZ); if (!data) { printf("could not alloc data segment\n"); return -1; }
+  memset(data, 0, DATA_SZ);
+
+  --argc; ++argv;
+  if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
+  if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { dbg = 1; --argc; ++argv; }
+  if (argc < 1) { printf("usage: cx [-s] [-d] [-v] file ...\n"); return -1; }
+
+  fn = *argv;
+
+  parse();
+
+  pc = (int *)idmain->val; if (!pc) { printf("main() not def'ed\n"); exit(-1); }
+  if (src) return 0;
+
+  free(sym); sym = 0;
+  free(ty_sz); ty_sz = 0;
+  free(members); members = 0;
+
+  i = run(pc, argc, argv);
+
+  free(code); e = le = code = 0;
+  free(data); d = data = 0;
+
+  return i;
 }

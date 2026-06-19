@@ -25,6 +25,10 @@ struct s2_s {
 int i2;
 
 int test() {
+  char* s;
+  s = malloc(100);
+  sprintf(s, "x%dx\n", 4711);
+  printf(s);
   return i1;
 }
 
@@ -75,9 +79,9 @@ int main() {
   printf("p1 == p2: %s\n", p1 == p2 ? "ok" : "FAILED");
   printf("p1 + 4 = %p\n", p1 + 4);
   printf("4 + p1 = %p\n", 4 + p1);
-  printf("p1 + p2 = %p FAILED: NOT ALLOWD\n", p1 + p2);
+  //printf("p1 + p2 = %p FAILED: NOT ALLOWD\n", p1 + p2);
   printf("p1 - 4 = %p\n", p1 - 4);
-  printf("4 - p1 = %p FAILED: NOT ALLOWD\n", 4 - p1);
+  //printf("4 - p1 = %p FAILED: NOT ALLOWD\n", 4 - p1);
   printf("p1 - p2 = %d\n", p1 - p2);
   printf("i1 = %d\n", i1);
   printf("*p1 = %d\n", *p1);

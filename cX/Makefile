@@ -24,4 +24,7 @@ c9: c9.c
 c9-test: c9 FORCE
 	-./test.sh c9
 
+cx: cx.c
+	gcc -Wall -m32 -Og -o cx cx.c
+
 FORCE:
