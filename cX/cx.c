@@ -3,7 +3,7 @@
 // char, int, structs, pointer types and enums
 // if, while, return and expression statements
 // just enough features to allow self-compilation and a bit more
-// no enum identifiers allowd
+// no enum identifiers allowed
 // no assignments in expressions allowed
 
 // Based on c4.c - C in four functions
@@ -14,12 +14,11 @@
 #include <unistd.h> // for read, write, close
 #include <stdio.h>  // for printf, sprintf, scanf, sscanf
 #include <stdlib.h> // for malloc, free
-#include <memory.h> // for memset, memcmp, memcpy
+#include <string.h> // for memset, memcmp, memcpy
 #include <fcntl.h>  // for open
 
 char *p, *lp, *tp, // current/line/token position in source code
      *d, *data,    // data pointer
-     *ops,         // opcodes
      *fn;          // filename
 
 int *e, *le, *code, // current/line position in emitted code
@@ -101,6 +100,17 @@ char *enum2str(int x) {
   return "<unknown enum>";
 }
 
+char *op2str(int i) {
+  char *ops;
+
+  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
+        "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
+        "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 SCANF\0  SPRINTF\0SSCANF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCMP\0 MEMCPY\0 EXIT\0   ";
+
+  if (IMM <= i && i <= EXIT) return &ops[i * 8];
+  return "<unknown opcode>";
+}
+
 void next() {
   char *pp; // previous position
 
@@ -109,7 +119,7 @@ void next() {
     if (tk == '\n') { // end of line
       if (src) {
         printf("%d: %.*s", line, p - lp, lp);
-        while (le < e) { printf("  %s", &ops[*++le * 8]); if (*le <= ADJ) { ++le; printf(" %d (0x%08X)\n", *le, *le); } else printf("\n"); }
+        while (le < e) { printf("  %s", op2str(*++le)); if (*le <= ADJ) { ++le; printf(" %d (0x%08X)\n", *le, *le); } else printf("\n"); }
       }
       lp = p; ++line;
     }
@@ -171,6 +181,7 @@ void next() {
           else if (tk_val == 'n') tk_val = '\n';
         }
         if (tk == '"') *d++ = tk_val;
+        if (d >= data + DATA_SZ) { printf("FATAL: data buffer overflow (d %p, data %p, DATA_SZ 0x%08x)\n", d, data, DATA_SZ); exit(-1); }
       }
       ++p; // skip '\'' or '"'
       if (tk == '"') tk_val = (int)pp;
@@ -235,7 +246,7 @@ void expr(int lev) {
     ty = PTR;
   }
   else if (match(Sizeof)) { // sizeof expr
-    if (!match('(')) { printf("%s:%d:%d: bad sizeof expr: '(' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+    if (!match('(')) { printf("%s:%d:%d: bad sizeof expr: '(' expected after 'sizeof'; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     ty = type("sizeof expr");
     while (match(Mul)) ty = ty + PTR;
     if (!match(')')) { printf("%s:%d:%d: bad sizeof expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
@@ -249,6 +260,7 @@ void expr(int lev) {
       i = 0;
       while (!match(')')) { // fun args
         expr(Cond);
+        // TODO: check arg type
         *++e = PUSH; ++i;
         if (!match(',') && tk != ')') { printf("%s:%d:%d: bad fun call: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
       }
@@ -279,7 +291,7 @@ void expr(int lev) {
     }
     else { // group expr
       expr(Cond);
-      if (!match(')')) { printf("%s:%d:%d: bad expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+      if (!match(')')) { printf("%s:%d:%d: bad group expr: ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     }
   }
   else if (match(Mul)) { // unary dereference expr
@@ -308,7 +320,7 @@ void expr(int lev) {
     expr(Inc);
     if (*e == LC) { *e = PUSH; *++e = LC; }
     else if (*e == LI) { *e = PUSH; *++e = LI; }
-    else { printf("%s:%d:%d: bad pre-incr/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, &ops[*e * 8]); exit(-1); }
+    else { printf("%s:%d:%d: bad pre-incr/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, op2str(*e)); exit(-1); }
     *++e = PUSH;
     *++e = IMM; *++e = ty >= PTR2 ? sizeof (int) : (ty >= PTR) ? ty_sz[ty - PTR] : 1;
     *++e = (i == Inc) ? ADD : SUB;
@@ -320,7 +332,7 @@ void expr(int lev) {
     i = ty;
     if (match(Assign)) { // assignment expr
       if (*e == LC || *e == LI) *e = PUSH;
-      else { printf("%s:%d:%d: bad assign expr: unexpected opcode %s\n", fn, line, tp - lp + 1, &ops[*e * 8]); exit(-1); }
+      else { printf("%s:%d:%d: bad assign expr: unexpected opcode %s\n", fn, line, tp - lp + 1, op2str(*e)); exit(-1); }
       expr(Assign);
       *++e = (i == CHAR) ? SC : SI; ty = i;
     }
@@ -370,7 +382,7 @@ void expr(int lev) {
     else if (tk == Inc || tk == Dec) { // post-inc/-dec
       if (*e == LC) { *e = PUSH; *++e = LC; }
       else if (*e == LI) { *e = PUSH; *++e = LI; }
-      else { printf("%s:%d:%d: bad post-inc/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, &ops[*e * 8]); exit(-1); }
+      else { printf("%s:%d:%d: bad post-inc/-dec expr: unexpected opcode %s\n", fn, line, tp - lp + 1, op2str(*e)); exit(-1); }
       sz = ty >= PTR2 ? sizeof (int) : ty >= PTR ? ty_sz[ty - PTR] : 1;
       *++e = PUSH; *++e = IMM; *++e = sz;
       *++e = (tk == Inc) ? ADD : SUB;
@@ -453,11 +465,11 @@ int enum_def() {
   struct ident_s *enum_id;
 
   // no enum identifier allowed!
-  if (!match('{')) { printf("%s:%d:%d: bad enum def: '{' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+  if (!match('{')) { printf("%s:%d:%d: bad enum def: '{' expected after 'enum'; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   i = 0;
   while (i == 0 || !match('}')) { // at least one enum id required
     if (tk != Id) { printf("%s:%d:%d: bad enum def: enum id expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
-    if (id->class) { printf("%s:%d:%d: duplicate enum id '%.*s'; already def'ed as '%s'\n", fn, line, tp - lp + 1, id->len, id->name, id->class); exit(-1); }
+    if (id->class) { printf("%s:%d:%d: duplicate enum id '%.*s'; already def'ed as '%s'\n", fn, line, tp - lp + 1, id->len, id->name, enum2str(id->class)); exit(-1); }
     enum_id = id;
     next();
     if (match(Assign)) {
@@ -517,7 +529,7 @@ int struct_def() {
   return bt;
 }
 
-void func_def(struct ident_s *func_id) {
+void fun_def(struct ident_s *func_id) {
   int i, bt;
 
   func_id->class = Fun;
@@ -525,7 +537,7 @@ void func_def(struct ident_s *func_id) {
   //printf("DBG fun def: '%.*s' ty:#%d\n", id->len, id->name, id->type);
   next();
 
-  // func args
+  // fun args
   i = 0;
   while (!match(')')) {
     ty = type("arg def");
@@ -540,7 +552,7 @@ void func_def(struct ident_s *func_id) {
     next();
     if (!match(',') && tk != ')') { printf("%s:%d:%d: bad arg def: ',' or ')' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
   }
-  if (!match('{')) { printf("%s:%d:%d: bad func def: '{' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
+  if (!match('{')) { printf("%s:%d:%d: bad fun def: '{' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
 
   // local vars
   loc = ++i;
@@ -563,7 +575,7 @@ void func_def(struct ident_s *func_id) {
     }
   }
 
-  // func body
+  // fun body
   *++e = ENTER; *++e = i - loc;
   while (tk != '}') stmt();
   *++e = LEAVE;
@@ -581,15 +593,7 @@ void func_def(struct ident_s *func_id) {
 }
 
 void parse() {
-  int fd, bt, sz;
-  char *s;
-
-  // read source file
-  fd = open(fn, 0); if (fd < 0) { printf("could not open '%s'; error %d\n", fn, fd); exit(-1); }
-  lp = p = s = malloc(SRC_SZ); if (!s) { printf("could not alloc source buffer\n"); exit(-1); }
-  sz = read(fd, p, SRC_SZ-1); if (sz <= 0) { printf("could not read '%s'; error %d\n", fn, sz); exit(-1); }
-  p[sz] = 0;
-  close(fd);
+  int bt;
 
   // parse global defs
   line = 1;
@@ -610,8 +614,8 @@ void parse() {
       if (id->class) { printf("%s:%d:%d: duplicate global '%.*s'; already def'ed as '%s'\n", fn, line, tp - lp + 1, id->len, id->name, enum2str(id->class)); exit(-1); }
       id->type = ty;
       next();
-      if (tk == '(') { // func def
-        func_def(id);
+      if (tk == '(') { // fun def
+        fun_def(id);
         tk = ';'; // leave inner while loop
       }
       else { // global var
@@ -620,12 +624,11 @@ void parse() {
         id->val = (int)d;
         //printf("DBG global def: '%.*s' ty:#%d sz:%d @%d\n", id->len, id->name, id->type, id->type < PTR ? ty_sz[id->type] : sizeof (int), d - data);
         d = d + (ty >= PTR ? sizeof (int) : ty_sz[id->type]);
+        if (d >= data + DATA_SZ) { printf("FATAL: data buffer overflow (d %p, data %p, DATA_SZ 0x%08x)\n", d, data, DATA_SZ); exit(-1); }
       }
       if (!match(',') && tk != ';') { printf("%s:%d:%d: bad global def: ',' or ';' expected; got %s\n", fn, line, tp - lp + 1, enum2str(tk)); exit(-1); }
     }
   }
-
-  free(s);
 }
 
 int run(int *pc, int argc, char **argv) {
@@ -647,12 +650,11 @@ int run(int *pc, int argc, char **argv) {
   // run...
   a = cycle = 0;
   while (1) {
-    i = *pc++; ++cycle;
     if (pc < code || pc >= code + CODE_SZ) { printf("FATAL: code buffer overflow (pc %p, code %p, CODE_SZ 0x%08x)\n", pc, code, CODE_SZ); exit(-1); }
-    if (d >= data + DATA_SZ) { printf("FATAL: data buffer overflow (pc %p, d %p, data %p, DATA_SZ 0x%08x)\n", pc, d, data, DATA_SZ); exit(-1); }
     if (sp < stack || sp >= stack + STACK_SZ) { printf("FATAL: stack overflow (pc %p, sp %p, stack %p, STACK_SZ 0x%08x)\n", pc, sp, stack, STACK_SZ); exit(-1); }
+    i = *pc++; ++cycle;
     if (dbg) {
-      printf("%d> %s", cycle, &ops[i * 8]);
+      printf("%d> %s", cycle, op2str(i));
       if (i <= ADJ) printf(" %d (0x%08X)\n", *pc, *pc); else printf("\n");
     }
 
@@ -705,29 +707,27 @@ int run(int *pc, int argc, char **argv) {
 
     else { printf("unknown instruction %d! cycle = %d\n", i, cycle); exit(-1); }
   }
-  free(stack);
+  // unreachable
   return -1;
 }
 
 int main(int argc, char **argv) {
-  int i, *pc;
-  struct ident_s *idmain;
+  int i, fd, sz, *pc_main;
+  char *str;
+  struct ident_s *id_main;
+  struct member_s *m;
 
-  ops = "IMM\0    LEA\0    JMP\0    JSR\0    BZ\0     BNZ\0    ENTER\0  ADJ\0    LEAVE\0  LI\0     LC\0     SI\0     SC\0     PUSH\0   "
-        "OR\0     XOR\0    AND\0    EQ\0     NE\0     LT\0     GT\0     LE\0     GE\0     SHL\0    SHR\0    ADD\0    SUB\0    MUL\0    DIV\0    MOD\0    "
-        "OPEN\0   READ\0   WRITE\0  CLOSE\0  PRINTF\0 SCANF\0  SPRINTF\0SSCANF\0 MALLOC\0 FREE\0   MEMSET\0 MEMCMP\0 MEMCPY\0 EXIT\0   ";
-
-  sym = malloc(SYM_SZ * sizeof (struct ident_s)); if (!sym) { printf("could not alloc symbol table\n"); return -1; }
+  sym = malloc(SYM_SZ * sizeof (struct ident_s)); if (!sym) { printf("could not alloc symbol table\n"); exit(-1); }
   memset(sym, 0, SYM_SZ * sizeof (struct ident_s));
 
-  ty_sz = malloc(PTR * sizeof (int)); if (!ty_sz) { printf("could not alloc type size array\n"); return -1; }
+  ty_sz = malloc(PTR * sizeof (int)); if (!ty_sz) { printf("could not alloc type size array\n"); exit(-1); }
   memset(ty_sz, 0, PTR * sizeof (int));
-  members = malloc(PTR * sizeof (struct member_s *)); if (!members) { printf("could not alloc members array\n"); return -1; }
+  members = malloc(PTR * sizeof (struct member_s *)); if (!members) { printf("could not alloc members array\n"); exit(-1); }
   memset(members, 0, PTR * sizeof (struct member_s *));
 
-  e = le = code = malloc(CODE_SZ * sizeof (int)); if (!code) { printf("could not alloc code segment\n"); return -1; }
+  e = le = code = malloc(CODE_SZ * sizeof (int)); if (!code) { printf("could not alloc code segment\n"); exit(-1); }
   memset(code, 0, CODE_SZ * sizeof (int));
-  d = data = malloc(DATA_SZ); if (!data) { printf("could not alloc data segment\n"); return -1; }
+  d = data = malloc(DATA_SZ); if (!data) { printf("could not alloc data segment\n"); exit(-1); }
   memset(data, 0, DATA_SZ);
 
   fn = "<init>";
@@ -738,7 +738,7 @@ int main(int argc, char **argv) {
   i = Char; while (i <= While) { next(); id->tk = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id->class = Sys; id->type = INT; id->val = i++; } // add library to symbol table
   next(); id->tk = Char; // handle void type
-  next(); idmain = id; // keep track of main
+  next(); id_main = id; // keep track of main
 
   // add primitive types
   ty_sz[ty_next++] = sizeof (char);
@@ -747,20 +747,35 @@ int main(int argc, char **argv) {
   --argc; ++argv;
   if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { dbg = 1; --argc; ++argv; }
-  if (argc < 1) { printf("usage: cx [-s] [-d] [-v] file ...\n"); return -1; }
+  if (argc < 1) { printf("usage: cx [-s] [-d] file ...\n"); return -1; }
 
   fn = *argv;
 
+  // read source file
+  fd = open(fn, 0); if (fd < 0) { printf("could not open '%s'; error %d\n", fn, fd); exit(-1); }
+  lp = p = str = malloc(SRC_SZ); if (!str) { printf("could not alloc source buffer\n"); exit(-1); }
+  sz = read(fd, str, SRC_SZ-1); if (sz <= 0) { printf("could not read '%s'; error %d\n", fn, sz); exit(-1); }
+  p[sz] = 0;
+  close(fd);
+
   parse();
 
-  pc = (int *)idmain->val; if (!pc) { printf("main() not def'ed\n"); exit(-1); }
+  pc_main = (int *)id_main->val; if (!pc_main) { printf("main() not def'ed\n"); exit(-1); }
   if (src) return 0;
 
   free(sym); sym = 0;
   free(ty_sz); ty_sz = 0;
+  i = INT; while (++i < PTR) {
+    while (members[i]) {
+      m = members[i];
+      members[i] = m->next;
+      free(m);
+    }
+  }
   free(members); members = 0;
+  free(str);
 
-  i = run(pc, argc, argv);
+  i = run(pc_main, argc, argv);
 
   free(code); e = le = code = 0;
   free(data); d = data = 0;
